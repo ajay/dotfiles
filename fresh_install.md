@@ -6,7 +6,15 @@
 `sudo apt update; sudo apt upgrade; sudo apt dist-upgrade; sudo apt autoremove`
 
 ### Install packages
-`sudo apt install fish gnome-tweak-tool git gcc chrome-gnome-shell`
+`sudo apt install fish gnome-tweak-tool git gcc sshfs apcalc`
+
+`sudo apt install pinta vlc`
+
+
+
+
+After chrome:
+`sudo apt install chrome-gnome-shell`
 
 
 ### Install sublime
@@ -22,12 +30,21 @@ wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 sudo dpkg –i google-chrome-stable_current_amd64.deb
 
 
+### Nautilus search as you type
+sudo add-apt-repository ppa:lubomir-brindza/nautilus-typeahead
+sudo apt dist-upgrade
+nautilus -r
+
+
 
 ## Config
+copy fish config
+copy sublime config
 
 ### fish
 chsh -s `which fish`
 `set fish_greeting`
+
 
 ### Chrome
 - Log into chrome & sync
@@ -48,9 +65,13 @@ chsh -s `which fish`
     - Restore window:      Ctrl+Super+Down
     - Maximize window:     Ctrl+Super+Up
 
+- Sound settings:
+    - Over amplification: on
+
 
 ### Tweaks
 - Appearance:
+    - Animations: off for speed
     - Theme: Adwaita-dark
     - Desktop: show icons on, all others off
     - Extensions
@@ -67,7 +88,7 @@ chsh -s `which fish`
             - Date: on
         - Calendar
             - Week numbers: on
-    - Windows 
+    - Windows
         - Action key: Alt
     - Workspaces
         - Static, 4
@@ -79,15 +100,22 @@ chsh -s `which fish`
     - 2 columns
     - hide labels
 - AlternateTab: `https://extensions.gnome.org/extension/15/alternatetab/`
+- Gnome Global Application Menu: `https://extensions.gnome.org/extension/1250/gnome-global-application-menu/`
 
 
 ## Work stuff
 
 ### Programs
 - AnyConnect VPN
-    - Needs this: 
+    - Needs this:
         1. sudo apt install network-manager-openconnect libpangox-1.0-0 libcanberra-gtk-module libcanberra-gtk3-module
         2. sudo systemctl daemon-reload
 - Code composer studio v8.2.0
     - Needs this:
         1. sudo apt install libusb-0.1 libusb-0.1 libgconf2-dev
+    - Preferences
+        - uncheck always run in the background
+    - Appearance
+        - Dark theme
+- Slack
+    - `sudo snap install slack --classic`
