@@ -1,0 +1,6 @@
+[user]
+	name = Ajay Srivastava
+	email = ajaysriv3@gmail.com
+
+[url "git@bitbucket.org:"]
+	insteadOf = https://bitbucket.org/

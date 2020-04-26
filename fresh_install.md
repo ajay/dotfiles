@@ -1,121 +1,113 @@
-# Fresh install ubuntu 18.04
+# Fresh install ubuntu 20.04
 
-## Install stuff
+## X1EG2
+- Use nvidia-driver-435 instead of nvidia-driver-440 to have external monitors work
 
-### Update, upgrade
-`sudo apt update; sudo apt upgrade; sudo apt dist-upgrade; sudo apt autoremove`
+```
+# update
+sudo apt update; sudo apt upgrade; sudo apt dist-upgrade; sudo apt autoremove
 
-### Install packages
-`sudo apt install fish gnome-tweak-tool git gcc sshfs apcalc`
+# dotfiles
+mkdir work
+git clone https://github.com/ajay/dotfiles ~/work/dotfiles
 
-`sudo apt install pinta vlc`
-
-
-
-
-After chrome:
-`sudo apt install chrome-gnome-shell`
-
-
-### Install sublime
-wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg | sudo apt-key add -
-sudo apt-get install apt-transport-https
-echo "deb https://download.sublimetext.com/ apt/stable/" | sudo tee /etc/apt/sources.list.d/sublime-text.list
-sudo apt-get update
-sudo apt-get install sublime-text
-
-
-### Install chrome
+# chrome
 wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 sudo dpkg –i google-chrome-stable_current_amd64.deb
 
+# packages
+sudo apt install fish gnome-tweak-tool git gcc sshfs apcalc vlc tree source-highlight vim grub-customizer
 
-### Nautilus search as you type
-sudo add-apt-repository ppa:lubomir-brindza/nautilus-typeahead
-sudo apt dist-upgrade
-nautilus -r
+# bash
+alias ..='cd ..'
 
-
-
-## Config
-copy fish config
-copy sublime config
-
-### fish
+# fish
 chsh -s `which fish`
-`set fish_greeting`
+set fish_greeting
+sudo apt install wmctrl renameutils
+ln -s ~/work/dotfiles/fish/functions ~/.config/fish/
+ln -s ~/work/dotfiles/fish/config.fish ~/.config/fish/
 
+# sublime
+wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg | sudo apt-key add -
+echo "deb https://download.sublimetext.com/ apt/stable/" | sudo tee /etc/apt/sources.list.d/sublime-text.list
+sudo apt install sublime-text
 
-### Chrome
+ln -s ~/work/dotfiles/sublime/Preferences.sublime-settings ~/.config/sublime-text-3/Packages/User/
+ln -s ~/work/dotfiles/sublime/Default\ \(Linux\).sublime-keymap ~/.config/sublime-text-3/Packages/User/
+
+# vim
+ln -s ~/work/dotfiles/vim/.vimrc ~/
+
+# git
+ln -s ~/work/dotfiles/git/.gitconfig ~/
+```
+
+### chrome
 - Log into chrome & sync
 - Hide most extensions in chrome menu
 
-### Small configs
-- Set dock to autohide
-- Dock order:
+### settings
+- Appearance
+    - Window colors: Dark
+    - Dock: Auto hide, show on all displays
+- Date & Time
+    - AM / PM
+- Sound
+    - Over-Amplification on
+
+### dock
+- order:
     1. Terminal
     2. Nautilus
     3. Chrome
-- Change time format to AM/PM from 24hr
-- Increase mouse speed a bit, change acceleration profile in tweaks
 
-- Change keyboard shortcuts:
-    - View split on left:  Ctrl+Super+Left
-    - View split on right: Ctrl+Super+Right
-    - Restore window:      Ctrl+Super+Down
-    - Maximize window:     Ctrl+Super+Up
+### tweaks
+- General
+    - Animations off
+    - Suspend when lid is closed off
+- Extensions
+    - Desktop Icons on
+        - Hide personal folder, hide trash
+- Top Bar
+    - Enable battery percentage, weekday, week numbers
+- Workspaces
+    - Static: 4
+    - Span displays
 
-- Sound settings:
-    - Over amplification: on
+### terminal
+- Profiles
+    - Colors
+        - uncheck use colors from system theme use gray on black
+        - uncheck use transparency from system theme, transparent background, about 25%
 
+### mouse / keyboard
+```
+# mouse
+sudo apt install imwheel piper
+ln -s ~/work/dotfiles/imwheel/.imwheelrc ~/
 
-### Tweaks
-- Appearance:
-    - Animations: off for speed
-    - Theme: Adwaita-dark
-    - Desktop: show icons on, all others off
-    - Extensions
-        - Ubuntu appindicators: on
-        - Ubuntu dock: on
-    - Keyboard & Mouse:
-        - Acceleration Profile: default
-    - Power
-        - Suspend when lid closed: off
-    - Top Bar
-        - Application menu: on
-        - Battery percentage: on
-        - Clock
-            - Date: on
-        - Calendar
-            - Week numbers: on
-    - Windows
-        - Action key: Alt
-    - Workspaces
-        - Static, 4
-        - Span displays
+# bluetooth keyboard
+echo "options hid_apple fnmode=0" | sudo tee /etc/modprobe.d/hid_apple.conf
+sudo update-initramfs -u -k all
+```
 
-### Install gnome extensions
-- Workspace Grid: `https://extensions.gnome.org/extension/484/workspace-grid/`
-    - 2 rows
-    - 2 columns
-    - hide labels
-- AlternateTab: `https://extensions.gnome.org/extension/15/alternatetab/`
-- Gnome Global Application Menu: `https://extensions.gnome.org/extension/1250/gnome-global-application-menu/`
+### startup script
+Add `~/work/dotfiles/startup/x1eg2.sh` to startup from gui
 
+### grub customizer
+set timeout to 1s
+set custom resolution to 1024x768
 
-## Work stuff
-
-### Programs
+## Work / RP
 - AnyConnect VPN
-    - Needs this:
-        1. sudo apt install network-manager-openconnect libpangox-1.0-0 libcanberra-gtk-module libcanberra-gtk3-module
-        2. sudo systemctl daemon-reload
-- Code composer studio v8.2.0
-    - Needs this:
-        1. sudo apt install libusb-0.1 libusb-0.1 libgconf2-dev
-    - Preferences
-        - uncheck always run in the background
-    - Appearance
-        - Dark theme
+    - `sudo apt install libpangox-1.0-0 libcanberra-gtk-module`
 - Slack
-    - `sudo snap install slack --classic`
+    - get deb from website
+- Ozone
+- Setup bitbucket ssh key
+
+```
+mkdir ~/build_server
+sshfs -o cache=no -o no_readahead -o sshfs_sync -o sync_readdir ajay@build.romeopowered.com:/build_server build_server/
+```
