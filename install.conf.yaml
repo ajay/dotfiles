@@ -1,0 +1,15 @@
+- defaults:
+    link:
+      create: true
+      relink: true
+      backup: true
+
+- link:
+    ~/.hg_shell.sh: null
+
+- clean:
+    - '~'
+
+- shell:
+    - - git submodule update --init --recursive
+      - Installing submodules
