@@ -6,9 +6,33 @@
 
 - shell:
     - - git submodule update --init --recursive
-      - Installing submodules
-    - - sudo dnf install less source-highlight
-      - Installing base packages
+      - => Installing submodules
+    - - sudo -v
+      - => Caching sudo
+    - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
+      - => dnf update
+    - - sudo -v && sudo dnf install
+        fedora-workstation-repositories
+        fish
+        gnome-tweaks
+        htop
+        hydrapaper
+        less
+        meld
+        source-highlight
+        vim
+        vlc
+      - => Installing packages
+    - - sudo -v && sudo dnf config-manager setopt google-chrome.enabled=1 && sudo dnf install google-chrome-stable
+      - => Installing Google Chrome
+    - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf install sublime-text
+      - => Installing Sublime Text
+    - - sudo -v && sudo dnf -y autoremove
+      - => dnf autoremove
+    - - sudo -v && sudo akmods
+      - => akmods
+    - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
+      - => mr. chef
 
 - clean:
     - '~'
