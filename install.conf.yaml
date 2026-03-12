@@ -4,12 +4,15 @@
       relink: true
       backup: true
 
-- link:
-    ~/.hg_shell.sh: null
+- shell:
+    - - git submodule update --init --recursive
+      - Installing submodules
+    - - sudo dnf install less source-highlight
+      - Installing base packages
 
 - clean:
     - '~'
 
-- shell:
-    - - git submodule update --init --recursive
-      - Installing submodules
+- link:
+    ~/.hg_shell.sh: null
+    ~/.config/fish/config.fish: fish/config.fish
