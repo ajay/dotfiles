@@ -39,6 +39,7 @@
     - '~/.config/fish'
 
 - link:
-    ~/.gitconfig: dotfiles/git/gitconfig
     ~/.config/fish/config.fish: dotfiles/fish/config.fish
-    ~/.config/fish/functions: dotfiles/fish/functions
+    ~/.config/fish/functions: dotfiles/fish/functions/
+    ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
+    ~/.gitconfig: dotfiles/git/gitconfig
