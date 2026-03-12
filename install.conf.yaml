@@ -12,6 +12,8 @@
     - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
       - => dnf update
     - - sudo -v && sudo dnf install
+        ansifilter
+        apcalc
         fedora-workstation-repositories
         fish
         gnome-tweaks
