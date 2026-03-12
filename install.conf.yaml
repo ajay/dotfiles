@@ -14,5 +14,6 @@
     - '~'
 
 - link:
+    ~/.gitconfig: git/gitconfig
     ~/.config/fish/config.fish: fish/config.fish
     ~/.config/fish/functions: fish/functions
