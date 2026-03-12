@@ -14,5 +14,5 @@
     - '~'
 
 - link:
-    ~/.hg_shell.sh: null
     ~/.config/fish/config.fish: fish/config.fish
+    ~/.config/fish/functions: fish/functions
