@@ -1,0 +1,643 @@
+#!/usr/bin/env bash
+#
+# workspace-setup.sh
+#
+# Automated workspace layout for Fedora Linux (GNOME, X11 or Wayland).
+# Launches applications and tiles their windows across monitors and
+# workspaces using a Tactile-style grid reference system.
+#
+# This script ships a small GNOME Shell extension that provides a D-Bus
+# API for window positioning.  The extension is automatically installed
+# and enabled on first run.
+#
+# Dependencies: jq, gdbus (glib2), gnome-extensions
+#   Install:  sudo dnf install jq
+#
+# Usage:
+#   ./workspace-setup.sh              Set up the workspace layout
+#   ./workspace-setup.sh --reset      Close all windows, then set up
+#   ./workspace-setup.sh --install    Install the helper extension only
+#   ./workspace-setup.sh --help       Show usage
+#
+set -euo pipefail
+
+# ══════════════════════════════════════════════════════════════════════════════
+#                              CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Tactile grid (4 cols x 2 rows, equal size):
+#
+#   ┌───┬───┬───┬───┐
+#   │ Q │ W │ E │ R │  row 0
+#   ├───┼───┼───┼───┤
+#   │ A │ S │ D │ F │  row 1
+#   └───┴───┴───┴───┘
+#    c0  c1  c2  c3
+#
+# Position = START-END  (top-left cell → bottom-right cell)
+#
+#   Q-F  full screen        Q-S  left half       E-F  right half
+#   Q-W  top-left 1/4       E-R  top-right 1/4   A-S  bottom-left 1/4
+#   D-F  bottom-right 1/4   Q-R  top half        A-F  bottom half
+#
+# LAYOUT entries:  "WORKSPACE:MONITOR:POSITION:COMMAND"
+#
+#   WORKSPACE  1-based workspace number
+#   MONITOR    0-based monitor position (0 = leftmost, 1 = next, ...)
+#   POSITION   Tactile grid reference
+#   COMMAND    Shell command to launch the application
+# ------------------------------------------------------------------------------
+
+LAYOUT=(
+    # ── Workspace 1 ──────────────────────────────────────────────────────────
+    "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
+    "1:1:Q-S:nautilus --new-window"          # Files left-half, right monitor
+
+    # ── Workspace 2 ──────────────────────────────────────────────────────────
+    "2:0:Q-F:subl -n"                        # Sublime Text maximized, left mon
+    "2:1:Q-W:ptyxis --new-window"            # Terminal top-left 1/4, right mon
+    "2:1:E-R:ptyxis --new-window"            # Terminal top-right 1/4
+    "2:1:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
+    "2:1:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+)
+
+# Grid dimensions (match your Tactile layout)
+GRID_COLS=4
+GRID_ROWS=2
+
+# Seconds to wait for each window to appear after launch
+WINDOW_WAIT_TIMEOUT=15
+
+# Pause between positioning operations (seconds)
+OP_DELAY=0.05
+
+# Gap between tiled windows in pixels (0 = edge-to-edge)
+TILE_GAP=0
+
+# ══════════════════════════════════════════════════════════════════════════════
+#                               INTERNALS
+# ══════════════════════════════════════════════════════════════════════════════
+
+EXT_UUID="workspace-setup@local"
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+DBUS_DEST="org.gnome.Shell"
+DBUS_PATH="/org/gnome/Shell/Extensions/WorkspaceSetup"
+DBUS_IFACE="org.gnome.Shell.Extensions.WorkspaceSetup"
+
+declare -A KEY_COL=([Q]=0 [W]=1 [E]=2 [R]=3 [A]=0 [S]=1 [D]=2 [F]=3)
+declare -A KEY_ROW=([Q]=0 [W]=0 [E]=0 [R]=0 [A]=1 [S]=1 [D]=1 [F]=1)
+
+MONITORS_JSON=""
+MON_COUNT=0
+STATE_FILE="$HOME/.cache/workspace-setup-windows"
+
+log()  { printf '[workspace-setup] %s\n' "$*" >&2; }
+warn() { printf '[workspace-setup] WARNING: %s\n' "$*" >&2; }
+die()  { printf '[workspace-setup] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# ── Dependency checks ────────────────────────────────────────────────────────
+
+check_deps() {
+    local missing=()
+    command -v jq       &>/dev/null || missing+=(jq)
+    command -v gdbus    &>/dev/null || missing+=(glib2)
+    command -v gnome-extensions &>/dev/null || missing+=(gnome-extensions)
+    if (( ${#missing[@]} )); then
+        die "Missing: ${missing[*]}.  Install with:  sudo dnf install ${missing[*]}"
+    fi
+}
+
+# ── D-Bus helpers ─────────────────────────────────────────────────────────────
+
+dbus_call() {
+    local method="$1"; shift
+    local result
+    if ! result=$(gdbus call --session \
+            --dest "$DBUS_DEST" \
+            --object-path "$DBUS_PATH" \
+            --method "$DBUS_IFACE.$method" \
+            -- "$@" 2>&1); then
+        warn "D-Bus call $method failed: $result"
+        return 1
+    fi
+    echo "$result"
+}
+
+# Call a method whose single out-arg is a JSON string.
+dbus_json() {
+    local raw
+    raw=$(dbus_call "$@") || return 1
+    # Strip GVariant wrapper:  ('{"json": ...}',)  →  {"json": ...}
+    raw="${raw#\(\'}"
+    raw="${raw%\',\)}"
+    echo "$raw"
+}
+
+# ── Extension installation ────────────────────────────────────────────────────
+
+install_extension() {
+    log "Installing GNOME Shell extension: $EXT_UUID"
+    mkdir -p "$EXT_DIR"
+
+    # ── metadata.json ─────────────────────────────────────────────────────
+    cat > "$EXT_DIR/metadata.json" << 'METADATA'
+{
+    "uuid": "workspace-setup@local",
+    "name": "Workspace Setup Helper",
+    "description": "D-Bus interface for programmatic window positioning",
+    "shell-version": ["45", "46", "47", "48"],
+    "version": 1
+}
+METADATA
+
+    # ── extension.js ──────────────────────────────────────────────────────
+    cat > "$EXT_DIR/extension.js" << 'EXTJS'
+import Gio from 'gi://Gio';
+import Meta from 'gi://Meta';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+
+const IFACE = `
+<node>
+  <interface name="org.gnome.Shell.Extensions.WorkspaceSetup">
+    <method name="GetMonitors">
+      <arg type="s" direction="out" name="result"/>
+    </method>
+    <method name="ListWindows">
+      <arg type="s" direction="out" name="result"/>
+    </method>
+    <method name="MoveResize">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="i" direction="in" name="x"/>
+      <arg type="i" direction="in" name="y"/>
+      <arg type="i" direction="in" name="width"/>
+      <arg type="i" direction="in" name="height"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="MoveToWorkspace">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="i" direction="in" name="workspaceIndex"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="Maximize">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="Unmaximize">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="ActivateWorkspace">
+      <arg type="i" direction="in" name="workspaceIndex"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="CloseWindow">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="FocusWindow">
+      <arg type="u" direction="in" name="windowId"/>
+      <arg type="b" direction="out" name="success"/>
+    </method>
+    <method name="GetFocusedWindowId">
+      <arg type="u" direction="out" name="windowId"/>
+    </method>
+  </interface>
+</node>
+`;
+
+export default class WorkspaceSetupExtension extends Extension {
+    enable() {
+        this._dbus = Gio.DBusExportedObject.wrapJSObject(IFACE, this);
+        this._dbus.export(
+            Gio.DBus.session,
+            '/org/gnome/Shell/Extensions/WorkspaceSetup'
+        );
+    }
+
+    disable() {
+        this._dbus?.unexport();
+        this._dbus = null;
+    }
+
+    _findWindow(id) {
+        for (const actor of global.get_window_actors()) {
+            if (actor.meta_window.get_stable_sequence() === id)
+                return actor.meta_window;
+        }
+        return null;
+    }
+
+    GetMonitors() {
+        const display = global.display;
+        const ws = global.workspace_manager.get_active_workspace();
+        const n = display.get_n_monitors();
+        const result = [];
+        for (let i = 0; i < n; i++) {
+            const geo = display.get_monitor_geometry(i);
+            const wa  = ws.get_work_area_for_monitor(i);
+            result.push({
+                index: i,
+                x: geo.x, y: geo.y,
+                width: geo.width, height: geo.height,
+                workArea: {
+                    x: wa.x, y: wa.y,
+                    width: wa.width, height: wa.height,
+                },
+                isPrimary: display.get_primary_monitor() === i,
+            });
+        }
+        return JSON.stringify(result);
+    }
+
+    ListWindows() {
+        return JSON.stringify(
+            global.get_window_actors()
+                .filter(a =>
+                    a.meta_window.get_window_type() === Meta.WindowType.NORMAL
+                )
+                .map(a => {
+                    const w = a.meta_window;
+                    const r = w.get_frame_rect();
+                    return {
+                        id:        w.get_stable_sequence(),
+                        title:     w.get_title()     || '',
+                        wmClass:   w.get_wm_class()  || '',
+                        workspace: w.get_workspace()?.index() ?? -1,
+                        x: r.x, y: r.y,
+                        width: r.width, height: r.height,
+                    };
+                })
+        );
+    }
+
+    MoveResize(id, x, y, w, h) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        if (win.get_maximized())
+            win.unmaximize(Meta.MaximizeFlags.BOTH);
+        win.move_resize_frame(false, x, y, w, h);
+        return true;
+    }
+
+    MoveToWorkspace(id, idx) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        win.change_workspace_by_index(idx, false);
+        return true;
+    }
+
+    Maximize(id) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        win.maximize(Meta.MaximizeFlags.BOTH);
+        return true;
+    }
+
+    Unmaximize(id) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        win.unmaximize(Meta.MaximizeFlags.BOTH);
+        return true;
+    }
+
+    ActivateWorkspace(idx) {
+        const ws = global.workspace_manager.get_workspace_by_index(idx);
+        if (!ws) return false;
+        ws.activate(global.get_current_time());
+        return true;
+    }
+
+    CloseWindow(id) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        win.delete(global.get_current_time());
+        return true;
+    }
+
+    FocusWindow(id) {
+        const win = this._findWindow(id);
+        if (!win) return false;
+        const ws = win.get_workspace();
+        if (ws) ws.activate(global.get_current_time());
+        win.activate(global.get_current_time());
+        return true;
+    }
+
+    GetFocusedWindowId() {
+        const win = global.display.focus_window;
+        return win ? win.get_stable_sequence() : 0;
+    }
+}
+EXTJS
+
+    log "Extension files written to $EXT_DIR"
+
+    gnome-extensions enable "$EXT_UUID" 2>/dev/null || true
+    sleep 2
+
+    log "Extension installed and enabled."
+    log "If this is the first install you may need to log out and back in."
+}
+
+# ── Extension readiness check ────────────────────────────────────────────────
+
+check_extension() {
+    if [[ ! -d "$EXT_DIR" ]]; then
+        install_extension
+    fi
+
+    local state
+    state=$(gnome-extensions show "$EXT_UUID" 2>/dev/null \
+            | grep -oP 'State: \K.*' || echo "NOT_FOUND")
+
+    if [[ "$state" != "ACTIVE" && "$state" != "ENABLED" ]]; then
+        log "Extension state: $state — attempting to enable..."
+        gnome-extensions enable "$EXT_UUID" 2>/dev/null || true
+        sleep 2
+        state=$(gnome-extensions show "$EXT_UUID" 2>/dev/null \
+                | grep -oP 'State: \K.*' || echo "NOT_FOUND")
+        if [[ "$state" != "ACTIVE" && "$state" != "ENABLED" ]]; then
+            die "Extension could not be activated (state: $state).
+  Try logging out and back in, then run this script again."
+        fi
+    fi
+
+    if ! dbus_json GetMonitors &>/dev/null; then
+        die "Extension is enabled but its D-Bus API is not responding.
+  Try logging out and back in, then run this script again."
+    fi
+
+    log "Extension is active."
+}
+
+# ── Monitor detection ─────────────────────────────────────────────────────────
+
+detect_monitors() {
+    MONITORS_JSON=$(dbus_json GetMonitors | jq 'sort_by(.x)')
+    MON_COUNT=$(echo "$MONITORS_JSON" | jq 'length')
+
+    if (( MON_COUNT == 0 )); then
+        die "No monitors detected."
+    fi
+
+    local i
+    for (( i = 0; i < MON_COUNT; i++ )); do
+        log "$(echo "$MONITORS_JSON" | jq -r --argjson i "$i" '
+            .[$i] |
+            "Monitor \($i): \(.width)x\(.height)+\(.x)+\(.y)" +
+            "  work-area \(.workArea.width)x\(.workArea.height)" +
+            "+\(.workArea.x)+\(.workArea.y)" +
+            (if .isPrimary then "  [primary]" else "" end)
+        ')"
+    done
+    log "$MON_COUNT monitor(s) detected."
+}
+
+# ── Tactile grid → pixel geometry ─────────────────────────────────────────────
+
+# Print  X Y W H  for a grid position on a given (sorted) monitor index.
+tactile_to_geometry() {
+    local pos="$1" mon="$2"
+
+    local start="${pos%-*}" end="${pos#*-}"
+    start="${start^^}"; end="${end^^}"
+
+    if [[ -z "${KEY_COL[$start]+_}" || -z "${KEY_COL[$end]+_}" ]]; then
+        die "Invalid grid key in position '$pos'"
+    fi
+
+    local c1=${KEY_COL[$start]} r1=${KEY_ROW[$start]}
+    local c2=${KEY_COL[$end]}   r2=${KEY_ROW[$end]}
+    if (( c1 > c2 )); then local t=$c1; c1=$c2; c2=$t; fi
+    if (( r1 > r2 )); then local t=$r1; r1=$r2; r2=$t; fi
+
+    local wa_x wa_y wa_w wa_h
+    read -r wa_x wa_y wa_w wa_h <<< "$(echo "$MONITORS_JSON" | \
+        jq -r ".[$mon].workArea | \"\(.x) \(.y) \(.width) \(.height)\"")"
+
+    local cell_w=$(( wa_w / GRID_COLS ))
+    local cell_h=$(( wa_h / GRID_ROWS ))
+
+    local win_x=$(( wa_x + c1 * cell_w + TILE_GAP ))
+    local win_y=$(( wa_y + r1 * cell_h + TILE_GAP ))
+    local win_w=$(( (c2 - c1 + 1) * cell_w - 2 * TILE_GAP ))
+    local win_h=$(( (r2 - r1 + 1) * cell_h - 2 * TILE_GAP ))
+
+    echo "$win_x $win_y $win_w $win_h"
+}
+
+# Returns 0 (true) if the position covers the entire grid.
+is_fullscreen_position() {
+    local pos="$1"
+    local start="${pos%-*}" end="${pos#*-}"
+    start="${start^^}"; end="${end^^}"
+
+    local c1=${KEY_COL[$start]} r1=${KEY_ROW[$start]}
+    local c2=${KEY_COL[$end]}   r2=${KEY_ROW[$end]}
+    if (( c1 > c2 )); then local t=$c1; c1=$c2; c2=$t; fi
+    if (( r1 > r2 )); then local t=$r1; r1=$r2; r2=$t; fi
+
+    (( c2 - c1 + 1 == GRID_COLS && r2 - r1 + 1 == GRID_ROWS ))
+}
+
+# ── Window management ─────────────────────────────────────────────────────────
+
+# Launch $1, wait for a new window, print its ID.
+launch_and_find_window() {
+    local cmd="$1"
+    local before_json
+    before_json=$(dbus_json ListWindows | jq '[.[].id]')
+
+    log "Launching: $cmd"
+    eval "$cmd" &>/dev/null &
+    disown
+
+    local new_id="" elapsed=0
+    while [[ -z "$new_id" ]] && (( elapsed < WINDOW_WAIT_TIMEOUT * 10 )); do
+        sleep 0.1
+        (( ++elapsed ))
+        new_id=$(dbus_json ListWindows | jq -r \
+            --argjson before "$before_json" \
+            '[.[].id] - $before | .[0] // empty')
+    done
+
+    if [[ -z "$new_id" ]]; then
+        warn "Timed out (${WINDOW_WAIT_TIMEOUT}s) waiting for window: $cmd"
+        return 1
+    fi
+
+    local elapsed_ms=$(( elapsed * 100 ))
+    log "  window $new_id appeared (${elapsed_ms}ms)"
+    echo "$new_id"
+}
+
+# Place a window at a Tactile grid position on a sorted monitor index.
+position_window() {
+    local wid="$1" pos="$2" mon="$3"
+
+    if is_fullscreen_position "$pos"; then
+        # Move to the monitor's work area, then maximize.
+        local wa_x wa_y wa_w wa_h
+        wa_x=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.x")
+        wa_y=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.y")
+        wa_w=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.width")
+        wa_h=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.height")
+        dbus_call MoveResize "$wid" "$wa_x" "$wa_y" "$wa_w" "$wa_h" >/dev/null
+        sleep "$OP_DELAY"
+        dbus_call Maximize "$wid" >/dev/null
+    else
+        local x y w h
+        read -r x y w h <<< "$(tactile_to_geometry "$pos" "$mon")"
+        dbus_call MoveResize "$wid" "$x" "$y" "$w" "$h" >/dev/null
+    fi
+
+    log "  positioned $pos on monitor $mon"
+}
+
+# ── Workspace management ─────────────────────────────────────────────────────
+
+# Verify the system has enough workspaces for the layout without changing settings.
+check_workspaces() {
+    local needed="$1"
+    local have
+    have=$(gsettings get org.gnome.desktop.wm.preferences num-workspaces 2>/dev/null \
+        | tr -d ' ') || have=""
+    local dynamic
+    dynamic=$(gsettings get org.gnome.mutter dynamic-workspaces 2>/dev/null \
+        | tr -d ' ') || dynamic=""
+
+    if [[ "$dynamic" == "true" ]]; then
+        # Dynamic workspaces — GNOME creates them on demand, nothing to check.
+        return
+    fi
+
+    if [[ -n "$have" ]] && (( have < needed )); then
+        die "Layout requires $needed workspace(s) but only $have configured.
+  Fix with:  gsettings set org.gnome.desktop.wm.preferences num-workspaces $needed"
+    fi
+}
+
+# ── Reset ─────────────────────────────────────────────────────────────────────
+
+# Save a window ID to the state file so --reset can close it later.
+track_window() {
+    local wid="$1"
+    mkdir -p "$(dirname "$STATE_FILE")"
+    echo "$wid" >> "$STATE_FILE"
+}
+
+reset_windows() {
+    if [[ ! -f "$STATE_FILE" ]]; then
+        log "No previous session to reset (no state file)."
+        return
+    fi
+    log "Closing windows from previous session..."
+    local count=0
+    while read -r wid; do
+        if dbus_call CloseWindow "$wid" >/dev/null 2>&1; then
+            (( ++count ))
+        fi
+    done < "$STATE_FILE"
+    rm -f "$STATE_FILE"
+    if (( count > 0 )); then
+        sleep 2
+        log "Closed $count window(s)."
+    else
+        log "No tracked windows still open."
+    fi
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+main() {
+    local do_reset=0 install_only=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            --reset)   do_reset=1 ;;
+            --install) install_only=1 ;;
+            --help|-h)
+                sed -n '2,/^[^#]/{ /^#/s/^# \?//p }' "$0"
+                exit 0
+                ;;
+            *) die "Unknown option: $arg  (use --help)" ;;
+        esac
+    done
+
+    check_deps
+
+    if (( install_only )); then
+        install_extension
+        exit 0
+    fi
+
+    check_extension
+    detect_monitors
+
+    # Remember the launching terminal so we can refocus it at the end.
+    local launcher_wid
+    launcher_wid=$(dbus_call GetFocusedWindowId 2>/dev/null \
+        | sed -n 's/.* \([0-9]\+\),.*/\1/p') || launcher_wid=""
+
+    if (( do_reset )); then
+        reset_windows
+    fi
+
+    # Clear state file for this new session.
+    rm -f "$STATE_FILE"
+
+    # Determine maximum workspace number.
+    local max_ws=1
+    for entry in "${LAYOUT[@]}"; do
+        IFS=: read -r ws _ _ _ <<< "$entry"
+        (( ws > max_ws )) && max_ws=$ws
+    done
+    check_workspaces "$max_ws"
+
+    # Process each workspace in order.
+    local ws
+    for (( ws = 1; ws <= max_ws; ws++ )); do
+        # Collect entries for this workspace.
+        local -a ws_entries=()
+        for entry in "${LAYOUT[@]}"; do
+            IFS=: read -r ews _ _ _ <<< "$entry"
+            (( ews == ws )) && ws_entries+=("$entry")
+        done
+        (( ${#ws_entries[@]} == 0 )) && continue
+
+        log "── Workspace $ws ──"
+        dbus_call ActivateWorkspace $(( ws - 1 )) >/dev/null || true
+        sleep "$OP_DELAY"
+
+        for entry in "${ws_entries[@]}"; do
+            IFS=: read -r _ mon pos cmd <<< "$entry"
+
+            if (( mon >= MON_COUNT )); then
+                warn "Monitor $mon not available (have $MON_COUNT). Skipping: $cmd"
+                continue
+            fi
+
+            local wid
+            if ! wid=$(launch_and_find_window "$cmd"); then
+                continue
+            fi
+
+            # Ensure the window is on the correct workspace.
+            dbus_call MoveToWorkspace "$wid" $(( ws - 1 )) >/dev/null || true
+
+            position_window "$wid" "$pos" "$mon"
+            track_window "$wid"
+        done
+    done
+
+    # Return to the launching terminal, or default to workspace 1.
+    if [[ -n "$launcher_wid" && "$launcher_wid" != "0" ]]; then
+        sleep 0.1
+        dbus_call FocusWindow "$launcher_wid" >/dev/null || true
+    else
+        dbus_call ActivateWorkspace 0 >/dev/null || true
+    fi
+    log "Done.  Layout is ready."
+}
+
+main "$@"
