@@ -24,6 +24,7 @@
         source-highlight
         vim
         vlc
+        xclip
       - => Installing packages
     - - sudo -v && sudo dnf config-manager setopt google-chrome.enabled=1 && sudo dnf install google-chrome-stable
       - => Installing Google Chrome
