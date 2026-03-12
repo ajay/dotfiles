@@ -18,26 +18,30 @@ if [[ -f /usr/share/scm/scm-prompt.sh ]]; then
     }
 
     _hg_dirty() {
-        if [ -n "${SHOW_DIRTY_STATE}" ] &&
-             [ "$(command sl config shell.showDirtyState)" != "false" ]; then
-                 local chars
-                 chars="$(command sl status 2> /dev/null |
-                       command awk '{print $1}' |
-                       command sort |
-                       command uniq |
-                       command paste -sd ' ' -)"
-                 if [ -n "${SHOW_DIRTY_STATE_COLORS}" ]; then
-                     local i c
-                     for ((i = 0; i < ${#chars}; i++)); do
-                         c="${chars:$i:1}"
-                         if [[ "$c" == " " ]]; then
-                             continue
-                         fi
-                         _hg_color_char "$c"
-                     done
-                 else
-                     builtin printf '%s' "$chars"
-                 fi
+        if [ -n "${SHOW_DIRTY_STATE}" ] && [ "$(command sl config shell.showDirtyState)" != "false" ]; then
+            local chars
+            chars="$(command sl status 2> /dev/null |
+                command awk '{print $1}' |
+                command sort |
+                command uniq |
+                command paste -sd ' ' -)"
+
+            if [ -n "$chars" ]; then
+                builtin printf ' '
+            fi
+
+            if [ -n "${SHOW_DIRTY_STATE_COLORS}" ]; then
+                local i c
+                for ((i = 0; i < ${#chars}; i++)); do
+                    c="${chars:$i:1}"
+                    if [[ "$c" == " " ]]; then
+                        continue
+                    fi
+                    _hg_color_char "$c"
+                done
+            else
+                builtin printf '%s' "$chars"
+            fi
         fi
     }
 
