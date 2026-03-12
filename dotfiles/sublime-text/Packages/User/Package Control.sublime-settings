@@ -7,12 +7,9 @@
 	[
 		"Bats",
 		"CMake",
-		"Devicetree DTS Highlighting",
 		"fish",
 		"Google Spell Check",
-		"MarkdownLivePreview",
 		"MoveTab",
-		"Package Control",
 		"Word Count",
 	],
 	"repositories":
