@@ -5,12 +5,6 @@
 	],
 	"installed_packages":
 	[
-		"Bats",
-		"CMake",
-		"fish",
-		"Google Spell Check",
-		"MoveTab",
-		"Word Count",
 	],
 	"repositories":
 	[
