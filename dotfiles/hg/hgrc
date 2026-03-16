@@ -1,0 +1,6 @@
+[ui]
+username = Ajay Srivastava <ajaysriv@meta.com>
+hyperlink = True
+
+[hint]
+ack = commitcloud-old-commits

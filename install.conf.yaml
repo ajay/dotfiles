@@ -60,3 +60,4 @@
     ~/.config/fish/functions: dotfiles/fish/functions/
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
+    ~/.hgrc: dotfiles/hg/hgrc
