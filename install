@@ -8,8 +8,11 @@ DOTBOT_DIR="dotbot/dotbot"
 DOTBOT_PLUGINS="--plugin dotbot/plugins/dotbot-directive/directive.py"
 
 BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 cd "${BASEDIR}"
+
+git -C "${DOTBOT_DIR}" submodule sync --recursive
+git submodule update --init --recursive
+
 python3 -B "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" \
     --base-directory "${BASEDIR}"                   \
     --config-file "${DOTBOT_CONFIG}"                \
