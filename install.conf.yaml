@@ -4,38 +4,50 @@
       create: true
       relink: true
 
-- shell:
-    - - git submodule update --init --recursive
-      - => Installing submodules
-    - - sudo -v
-      - => Caching sudo
-    - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
-      - => dnf update
-    - - sudo -v && sudo dnf install
-        ansifilter
-        apcalc
-        fedora-workstation-repositories
-        fish
-        gnome-tweaks
-        htop
-        hydrapaper
-        less
-        meld
-        source-highlight
-        vim
-        vlc
-        xclip
-      - => Installing packages
-    - - sudo -v && sudo dnf config-manager setopt google-chrome.enabled=1 && sudo dnf install google-chrome-stable
-      - => Installing Google Chrome
-    - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf install sublime-text
-      - => Installing Sublime Text
-    - - sudo -v && sudo dnf -y autoremove
-      - => dnf autoremove
-    - - sudo -v && sudo akmods
-      - => akmods
-    - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
-      - => mr. chef
+- shell-sudo:
+  - shell:
+      - - sudo -v
+        - => Caching sudo
+
+- shell-git:
+  - shell:
+      - - git pull
+        - "=> shell-git: Pull"
+      - - git submodule update --init --recursive
+        - "=> shell-git: Update submodules"
+
+- shell-dnf:
+  - shell:
+      - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
+        - "=> shell-dnf: Update"
+      - - sudo -v && sudo dnf install
+          ansifilter
+          apcalc
+          fedora-workstation-repositories
+          fish
+          gnome-tweaks
+          htop
+          hydrapaper
+          less
+          meld
+          source-highlight
+          vim
+          vlc
+          xclip
+        - "=> shell-dnf: Installing packages"
+      - - sudo -v && sudo dnf config-manager setopt google-chrome.enabled=1 && sudo dnf install google-chrome-stable
+        - "=> shell-dnf: Installing Google Chrome"
+      - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf install sublime-text
+        - "=> shell-dnf: Installing Sublime Text"
+      - - sudo -v && sudo dnf -y autoremove
+        - "=> shell-dnf: autoremove"
+      - - sudo -v && sudo akmods
+        - "=> shell-dnf: akmods"
+
+- shell-meta-chef:
+  - shell:
+      - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
+        - "=> shell-meta-chef: mr. chef"
 
 - clean:
     - '~'

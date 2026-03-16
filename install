@@ -5,7 +5,7 @@ set -e -x
 DOTBOT_BIN="bin/dotbot"
 DOTBOT_CONFIG="install.conf.yaml"
 DOTBOT_DIR="dotbot/dotbot"
-DOTBOT_PLUGINS=""
+DOTBOT_PLUGINS="--plugin dotbot/plugins/dotbot-directive/directive.py"
 
 BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
