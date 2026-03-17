@@ -13,7 +13,7 @@
   - shell:
       - - git pull
         - "=> shell-git: Pull"
-      - - git submodule update --init --recursive
+      - - git submodule sync --recursive && git submodule update --init --recursive
         - "=> shell-git: Update submodules"
       - - test -z "$(git status --porcelain)"
         - "=> shell-git: Check if dirty"
