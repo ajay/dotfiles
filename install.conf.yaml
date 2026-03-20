@@ -58,6 +58,7 @@
 - link:
     ~/.config/fish/config.fish: dotfiles/fish/config.fish
     ~/.config/fish/functions: dotfiles/fish/functions/
+    ~/.claude/commands: dotfiles/claude/commands/
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc

@@ -1,0 +1,1 @@
+Inspect the currently checked out commit and any others in the current stack. Familiarize yourself with the changes being made. Aim to understand the changes being made and the motivation behind them. Be thorough. Ask questions if needed.
