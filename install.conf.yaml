@@ -7,7 +7,7 @@
 - shell-sudo:
   - shell:
       - - sudo -v
-        - => Caching sudo
+        - "=> shell-sudo: Caching sudo"
 
 - shell-git:
   - shell:
