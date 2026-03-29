@@ -1,8 +1,8 @@
 function claude
     if test -f /home/ajaysriv/.dotfiles/dotfiles/claude/settings.json
-        echo "Running `claude --settings /home/ajaysriv/.dotfiles/dotfiles/claude/settings.json $argv`"
-        bash -c "$(command -v claude) $argv"
+        set fish_trace 1
+        command claude --settings /home/ajaysriv/.dotfiles/dotfiles/claude/settings.json $argv
     else
-        bash -c "$(command -v claude) $argv"
+        command claude
     end
 end
