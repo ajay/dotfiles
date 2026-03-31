@@ -1,2 +1,0 @@
-#!/bin/bash
-imwheel --kill --buttons "4 5"
