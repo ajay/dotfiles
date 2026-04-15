@@ -3,14 +3,14 @@ DOTBOT_CONFIG        := dotbot.conf.yaml
 DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py
 DOTBOT_FLAGS_EXTRA   :=
 
-.PHONY: install install-no-chef install-lite git-update
+.PHONY: install install-no-chef install-lite git-submodule-update
 
-git-update:
+git-submodule-update:
 	git pull
 	git submodule sync --recursive
 	git submodule update --init --recursive
 
-install: git-update
+install: git-submodule-update
 	python3 -B $(DOTBOT_BIN)           \
 		--base-directory $(CURDIR)     \
 		--config-file $(DOTBOT_CONFIG) \
