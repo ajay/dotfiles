@@ -3,7 +3,7 @@ DOTBOT_CONFIG        := dotbot.conf.yaml
 DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py
 DOTBOT_FLAGS_EXTRA   :=
 
-.PHONY: install install-no-chef install-lite git-submodule-update
+.PHONY: git-submodule-update install install-lite install-no-chef
 
 git-submodule-update:
 	git pull
@@ -18,8 +18,8 @@ install: git-submodule-update
 		$(DOTBOT_FLAGS_EXTRA)          \
 		-vv
 
-install-no-chef:
-	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-meta-chef"
-
 install-lite:
 	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-dnf shell-meta-chef shell-sudo"
+
+install-no-chef:
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-meta-chef"
