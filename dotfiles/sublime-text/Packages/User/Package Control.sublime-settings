@@ -6,6 +6,8 @@
 	"installed_packages":
 	[
 		"fish",
+		"IncrementalDiff",
+		"TrailingSpaces",
 	],
 	"repositories":
 	[
