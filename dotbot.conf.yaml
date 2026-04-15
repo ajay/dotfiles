@@ -39,12 +39,14 @@
           apcalc
           fedora-workstation-repositories
           fish
+          gh
           gnome-tweaks
           htop
           hydrapaper
           less
           meld
           source-highlight
+          strace
           vim
           vlc
           xclip
