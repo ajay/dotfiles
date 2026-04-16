@@ -1,0 +1,917 @@
+#!/usr/bin/env python3
+"""GitHub repo status dashboard — interactive TUI."""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+from base64 import b64decode
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from configparser import ConfigParser
+
+try:
+    from rich.text import Text
+    from textual.app import App, ComposeResult
+    from textual.binding import Binding
+    from textual.widgets import Footer, Header, Static, Tree
+    from textual.widgets.tree import TreeNode
+    from textual.events import Key
+except ImportError:
+    print("Missing dependency: pip install textual", file=sys.stderr)
+    sys.exit(1)
+
+################################################################################
+
+REPOS = sorted([
+    "ajay/ajay.github.io",
+    "ajay/build-tools",
+    "ajay/site-common",
+    "ajay/site-hangsanfamily",
+    "ajay/site-saxenafamily",
+    "ajay/site-srivastavafamily",
+])
+
+################################################################################
+# Data layer — GitHub API with caching
+################################################################################
+
+_cache = {}
+_cache_locks = {}
+_cache_meta_lock = threading.Lock()
+_timing = []
+_timing_lock = threading.Lock()
+_gh_token = None
+
+
+def _get_token():
+    global _gh_token
+    if _gh_token is None:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, timeout=10
+        )
+        _gh_token = result.stdout.strip() if result.returncode == 0 else ""
+    return _gh_token
+
+
+def gh_api(endpoint):
+    with _cache_meta_lock:
+        if endpoint in _cache:
+            return _cache[endpoint]
+        if endpoint not in _cache_locks:
+            _cache_locks[endpoint] = threading.Lock()
+        lock = _cache_locks[endpoint]
+
+    with lock:
+        with _cache_meta_lock:
+            if endpoint in _cache:
+                return _cache[endpoint]
+
+        t0 = time.monotonic()
+        token = _get_token()
+        url = f"https://api.github.com/{endpoint}"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"token {token}")
+        req.add_header("Accept", "application/vnd.github+json")
+        req.add_header("User-Agent", "github-repo-status")
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+        except Exception:
+            data = None
+
+        elapsed = time.monotonic() - t0
+        with _timing_lock:
+            _timing.append((endpoint, elapsed))
+
+        with _cache_meta_lock:
+            _cache[endpoint] = data
+        return data
+
+
+def get_head_info(repo):
+    """Get HEAD SHA and commit date. Returns (sha, date_str) or (None, None)."""
+    data = gh_api(f"repos/{repo}/commits/main")
+    if not data or "sha" not in data:
+        data = gh_api(f"repos/{repo}/commits/master")
+    if data and "sha" in data:
+        sha = data["sha"]
+        date_raw = data.get("commit", {}).get("committer", {}).get("date", "")
+        # "2026-04-15T12:37:52Z" -> "2026-04-15 12:37"
+        date_str = date_raw.replace("T", " ")[:16] if date_raw else ""
+        return sha, date_str
+    return None, None
+
+
+def get_ci_runs(repo):
+    """Get latest CI runs grouped by workflow name."""
+    data = gh_api(f"repos/{repo}/actions/runs?per_page=20&branch=main")
+    if not data:
+        data = gh_api(f"repos/{repo}/actions/runs?per_page=20&branch=master")
+    if not data or not data.get("workflow_runs"):
+        return []
+    seen = {}
+    for run in data["workflow_runs"]:
+        name = run.get("name", "unknown")
+        if name not in seen:
+            seen[name] = {
+                "name": name,
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+            }
+    return list(seen.values())
+
+
+def get_gitmodules(repo, ref):
+    data = gh_api(f"repos/{repo}/contents/.gitmodules?ref={ref}")
+    if not data or "content" not in data:
+        return {}
+    content = b64decode(data["content"]).decode()
+    config = ConfigParser()
+    config.read_string(content)
+    modules = {}
+    for section in config.sections():
+        path = config.get(section, "path", fallback=None)
+        url = config.get(section, "url", fallback=None)
+        if path and url:
+            modules[path] = url
+    return modules
+
+
+def get_submodule_shas(repo, ref):
+    data = gh_api(f"repos/{repo}/git/trees/{ref}?recursive=1")
+    if not data or "tree" not in data:
+        return {}
+    return {
+        entry["path"]: entry["sha"]
+        for entry in data["tree"]
+        if entry.get("type") == "commit"
+    }
+
+
+def url_to_owner_repo(url):
+    match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+    return match.group(1) if match else None
+
+
+def collect_submodules_bfs(repo_refs, max_depth=5):
+    """BFS submodule discovery across multiple (repo, ref) pairs in parallel.
+
+    repo_refs: list of (repo, ref) tuples to discover submodules for.
+    Returns: {repo: [submodule_dicts]} keyed by the original repo_refs entries.
+    Each submodule dict has: path, url, owner_repo, pinned, depth.
+    """
+    # results[original_repo] = [sub_dicts...]
+    results = {repo: [] for repo, _ in repo_refs}
+
+    # Queue: (owner_repo, ref, original_repo, depth)
+    # original_repo tracks which top-level repo this submodule belongs to
+    queue = [(repo, ref, repo, 0) for repo, ref in repo_refs if ref]
+
+    for depth in range(max_depth):
+        if not queue:
+            break
+
+        # Deduplicate: same (owner_repo, ref) only needs one fetch
+        unique_keys = {}
+        for owner_repo, ref, orig_repo, d in queue:
+            key = (owner_repo, ref)
+            if key not in unique_keys:
+                unique_keys[key] = []
+            unique_keys[key].append(orig_repo)
+
+        # Parallel fetch: .gitmodules AND tree for all unique (repo, ref) pairs
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            mod_futures = {
+                pool.submit(get_gitmodules, repo, ref): (repo, ref)
+                for repo, ref in unique_keys
+            }
+            tree_futures = {
+                pool.submit(get_submodule_shas, repo, ref): (repo, ref)
+                for repo, ref in unique_keys
+            }
+
+            mod_results = {}
+            for f in as_completed(mod_futures):
+                key = mod_futures[f]
+                mod_results[key] = f.result()
+
+            tree_results = {}
+            for f in as_completed(tree_futures):
+                key = tree_futures[f]
+                tree_results[key] = f.result()
+
+        # Process results and build next queue
+        next_queue = []
+        for (owner_repo, ref), orig_repos in unique_keys.items():
+            modules = mod_results.get((owner_repo, ref), {})
+            pinned = tree_results.get((owner_repo, ref), {})
+
+            for path, url in modules.items():
+                sub_owner = url_to_owner_repo(url)
+                sha = pinned.get(path)
+                sub_dict = {
+                    "path": path,
+                    "url": url,
+                    "owner_repo": sub_owner,
+                    "pinned": sha,
+                    "depth": depth,
+                }
+                for orig in orig_repos:
+                    results[orig].append(sub_dict)
+
+                if sha and sub_owner:
+                    for orig in orig_repos:
+                        next_queue.append((sub_owner, sha, orig, depth + 1))
+
+        queue = next_queue
+
+    return results
+
+
+################################################################################
+# Display helpers
+################################################################################
+
+
+def ci_text(status, conclusion):
+    if not status:
+        return Text("—", style="dim")
+    if status == "completed":
+        if conclusion == "success":
+            return Text("✓ pass", style="green")
+        if conclusion == "failure":
+            return Text("✗ fail", style="red")
+        return Text(conclusion or "?", style="yellow")
+    if status in ("in_progress", "queued"):
+        return Text("⟳ running", style="yellow")
+    return Text(status, style="dim")
+
+
+def sub_status_text(pinned, latest):
+    if not pinned or not latest:
+        return Text("?", style="dim")
+    if pinned == latest:
+        return Text("✓", style="green")
+    return Text("✗ stale", style="red")
+
+
+COL_OWNER = 12
+COL_REPO = 24
+COL_COMMIT = 9
+COL_DATE = 18
+
+
+def repo_label(owner, name, head=None, date=None, ci_ok=None, subs_ok=None):
+    """Build a rich Text label for a repo tree node with fixed-width columns."""
+    t = Text()
+    t.append(f"{owner:<{COL_OWNER}s}", style="dim")
+    t.append(f"{name:<{COL_REPO}s}", style="bold")
+    t.append(f"{head[:7] if head else '…':<{COL_COMMIT}s}", style="dim")
+    t.append(f"{date or '…':<{COL_DATE}s}", style="dim")
+    if ci_ok is None and subs_ok is None:
+        t.append("…", style="dim")
+    elif ci_ok is False or subs_ok is False:
+        t.append("✗", style="red")
+    elif ci_ok and (subs_ok is True or subs_ok is None):
+        t.append("✓", style="green")
+    else:
+        t.append("…", style="dim")
+    return t
+
+
+SORT_COLUMNS = ["owner", "repo", "commit", "updated", "status"]
+COL_HEADER_PAD = 4  # left padding on #col-header
+
+
+def col_header_text(sort_key="owner", sort_ascending=True):
+    """Build the column header row with sort indicator."""
+    arrow = " ▲" if sort_ascending else " ▼"
+    cols = [
+        ("owner", COL_OWNER),
+        ("repo", COL_REPO),
+        ("commit", COL_COMMIT),
+        ("updated", COL_DATE),
+        ("status", 0),
+    ]
+    t = Text()
+    for name, width in cols:
+        label = name + (arrow if name == sort_key else "")
+        if width:
+            t.append(f"{label:<{width}s}", style="bold dim")
+        else:
+            t.append(label, style="bold dim")
+    return t
+
+
+def col_from_click_x(x):
+    """Determine which column was clicked based on x offset."""
+    x -= COL_HEADER_PAD
+    boundaries = [COL_OWNER, COL_REPO, COL_COMMIT, COL_DATE]
+    pos = 0
+    for i, w in enumerate(boundaries):
+        pos += w
+        if x < pos:
+            return SORT_COLUMNS[i]
+    return "status"
+
+
+def ci_ok(ci_runs):
+    """Return True if all CI passes, False if any fail, None if unknown."""
+    if ci_runs is None:
+        return None
+    if not ci_runs:
+        return None  # no CI configured
+    conclusions = [r["conclusion"] for r in ci_runs]
+    if any(c == "failure" for c in conclusions):
+        return False
+    if all(c == "success" for c in conclusions):
+        return True
+    return None  # in progress
+
+
+def ci_section_label(ci_runs):
+    """Build label for CI Workflows section header."""
+    t = Text("CI Workflows", style="bold dim")
+    t.append("  ")
+    if not ci_runs:
+        t.append("— no CI", style="dim")
+    else:
+        conclusions = [r["conclusion"] for r in ci_runs]
+        if all(c == "success" for c in conclusions):
+            t.append("✓ pass", style="green")
+        elif any(c == "failure" for c in conclusions):
+            t.append("✗ fail", style="red")
+        else:
+            t.append("⟳ running", style="yellow")
+    return t
+
+
+def subs_section_label(stale_count):
+    """Build label for Submodules section header."""
+    t = Text("Submodules", style="bold dim")
+    t.append("  ")
+    if stale_count == 0:
+        t.append("✓ up to date", style="green")
+    else:
+        t.append(f"✗ {stale_count} stale", style="red")
+    return t
+
+
+################################################################################
+# Custom Tree with left/right expand/collapse
+################################################################################
+
+
+class RepoTree(Tree):
+    """Tree with left=collapse, right=expand (one-way, not toggle)."""
+
+    def _on_key(self, event: Key) -> None:
+        if self.cursor_node is None:
+            return
+        node = self.cursor_node
+        if event.key == "right":
+            if node.allow_expand and not node.is_expanded:
+                node.expand()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "left":
+            if node.is_expanded:
+                node.collapse()
+            elif node.parent and node.parent != self.root:
+                self.select_node(node.parent)
+                node.parent.collapse()
+            event.prevent_default()
+            event.stop()
+        else:
+            super()._on_key(event)
+
+
+################################################################################
+# TUI App
+################################################################################
+
+
+class RepoStatusApp(App):
+    TITLE = "GitHub Repo Status"
+
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+    #col-header {
+        padding: 0 2 0 4;
+        color: $text 60%;
+        height: auto;
+    }
+    Tree {
+        padding: 0 2;
+    }
+    Tree > .tree--cursor {
+        background: $accent 30%;
+    }
+    #level-indicator {
+        display: none;
+    }
+    Footer {
+        background: $surface-darken-1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("e", "expand_all", "Expand all"),
+        Binding("c", "collapse_all", "Collapse all"),
+        Binding("ctrl+right", "expand_level", "Level +", show=False),
+        Binding("ctrl+left", "collapse_level", "Level -", show=False),
+        Binding("s", "toggle_submodules", "Toggle subs"),
+    ]
+
+    async def action_quit(self) -> None:
+        self._stop.set()
+        # Watchdog: force-kill after 1s if clean shutdown hangs
+        threading.Thread(
+            target=lambda: (time.sleep(1), os._exit(0)), daemon=True
+        ).start()
+        self.exit()
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static(col_header_text(), id="col-header")
+        tree: RepoTree = RepoTree("Repos", id="repo-tree")
+        tree.show_root = False
+        tree.guide_depth = 3
+        yield tree
+        yield Static("", id="level-indicator")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._repo_nodes: dict[str, TreeNode] = {}
+        self._head_cache: dict[str, str] = {}
+        self._stop = threading.Event()
+        self._expansion_level = 1
+        self._fetch_status = ""
+        self._loading = False
+        self._sort_key = "owner"
+        self._sort_ascending = True
+        self._repo_data: dict[str, dict] = {}  # repo -> cached data for sorting
+        self._spinner_idx = 0
+        self._spinner_timer = None
+
+        tree = self.query_one("#repo-tree", RepoTree)
+        for repo in REPOS:
+            owner, name = repo.split("/")
+            label = repo_label(owner, name)
+            node = tree.root.add(label, data={"repo": repo}, expand=False)
+            self._repo_nodes[repo] = node
+
+        self._start_loading()
+        self._update_level_indicator()
+
+    def action_refresh(self) -> None:
+        global _cache, _cache_locks, _timing
+        self._stop.set()  # stop any in-flight loading
+        _cache = {}
+        _cache_locks = {}
+        _timing = []
+        self._head_cache = {}
+        self._repo_data = {}
+        self._stop = threading.Event()  # fresh stop signal
+
+        tree = self.query_one("#repo-tree", RepoTree)
+        for repo, node in self._repo_nodes.items():
+            node.remove_children()
+            owner, name = repo.split("/")
+            node.set_label(repo_label(owner, name))
+
+        self._start_loading()
+
+    def action_expand_all(self) -> None:
+        self._expansion_level = 3
+        self._apply_expansion_level()
+
+    def action_collapse_all(self) -> None:
+        self._expansion_level = 0
+        self._apply_expansion_level()
+
+    def action_expand_level(self) -> None:
+        if self._expansion_level < 3:
+            self._expansion_level += 1
+            self._apply_expansion_level()
+
+    def action_collapse_level(self) -> None:
+        if self._expansion_level > 0:
+            self._expansion_level -= 1
+            self._apply_expansion_level()
+
+    _LEVEL_NAMES = ["collapsed", "repo info", "submodules", "full"]
+
+    def _update_level_indicator(self) -> None:
+        self._update_subtitle()
+
+    def _apply_expansion_level(self) -> None:
+        level = self._expansion_level
+        for node in self._repo_nodes.values():
+            if level == 0:
+                node.collapse()
+            elif level == 1:
+                node.expand()
+                for child in node.children:
+                    child.collapse()
+            elif level == 2:
+                node.expand()
+                for child in node.children:
+                    child.expand()
+                    # Collapse recursive submodules (children of submodule nodes)
+                    for sub in child.children:
+                        if sub.allow_expand:
+                            sub.collapse()
+            else:  # level 3
+                node.expand_all()
+        self._update_level_indicator()
+
+    def action_toggle_submodules(self) -> None:
+        # Check if any submodule section is expanded
+        any_expanded = False
+        sub_nodes = []
+        for node in self._repo_nodes.values():
+            for child in node.children:
+                if isinstance(child.label, Text) and "Submodules" in child.label.plain:
+                    sub_nodes.append(child)
+                    if child.is_expanded:
+                        any_expanded = True
+
+        for sub_node in sub_nodes:
+            if any_expanded:
+                sub_node.collapse()
+            else:
+                sub_node.parent.expand()
+                sub_node.expand_all()
+
+    def on_click(self, event) -> None:
+        """Handle clicks on the column header for sorting."""
+        widget = event.widget
+        # Walk up to find if click was on #col-header
+        while widget is not None:
+            if hasattr(widget, "id") and widget.id == "col-header":
+                col = col_from_click_x(event.x)
+                if col == self._sort_key:
+                    self._sort_ascending = not self._sort_ascending
+                else:
+                    self._sort_key = col
+                    self._sort_ascending = True
+                self._update_col_header()
+                self._rebuild_tree()
+                return
+            widget = getattr(widget, "parent", None)
+
+    def _update_col_header(self) -> None:
+        header = self.query_one("#col-header", Static)
+        header.update(col_header_text(self._sort_key, self._sort_ascending))
+
+    def _sort_value(self, repo, key):
+        """Extract a sortable value for a repo by column key."""
+        owner, name = repo.split("/")
+        data = self._repo_data.get(repo, {})
+        if key == "owner":
+            return owner.lower()
+        elif key == "repo":
+            return name.lower()
+        elif key == "commit":
+            return data.get("sha") or ""
+        elif key == "updated":
+            return data.get("date") or ""
+        elif key == "status":
+            # Sort: fail (0) before unknown (1) before pass (2)
+            ci = data.get("ci_ok")
+            subs = data.get("subs_ok")
+            if ci is False or subs is False:
+                return 0
+            elif ci is True and (subs is True or subs is None):
+                return 2
+            else:
+                return 1
+        return ""
+
+    def _sorted_repos(self):
+        """Return REPOS in current sort order."""
+        repos = list(REPOS)
+        repos.sort(
+            key=lambda r: self._sort_value(r, self._sort_key),
+            reverse=not self._sort_ascending,
+        )
+        return repos
+
+    def _rebuild_tree(self) -> None:
+        """Clear and rebuild tree nodes in current sort order."""
+        tree = self.query_one("#repo-tree", RepoTree)
+        tree.root.remove_children()
+        self._repo_nodes.clear()
+
+        for repo in self._sorted_repos():
+            owner, name = repo.split("/")
+            data = self._repo_data.get(repo, {})
+            sha = data.get("sha")
+            date = data.get("date")
+            ci_runs = data.get("ci_runs")
+            submodules = data.get("submodules")
+            sha_cache = data.get("sha_cache", {})
+            ci_ok_val = data.get("ci_ok")
+            subs_ok_val = data.get("subs_ok")
+
+            label = repo_label(owner, name, sha, date, ci_ok_val, subs_ok_val)
+            node = tree.root.add(label, data={"repo": repo}, expand=False)
+            self._repo_nodes[repo] = node
+
+            # Rebuild children if we have data
+            if ci_runs:
+                ci_node = node.add(ci_section_label(ci_runs), expand=True)
+                for run in ci_runs:
+                    rlabel = Text()
+                    rlabel.append(f"  {run['name']}  ", style="dim")
+                    rlabel.append_text(ci_text(run["status"], run["conclusion"]))
+                    ci_node.add_leaf(rlabel)
+
+            if submodules:
+                stale = sum(
+                    1
+                    for s in submodules
+                    if s["pinned"]
+                    and sha_cache.get(s["owner_repo"])
+                    and s["pinned"] != sha_cache[s["owner_repo"]]
+                )
+                sub_node = node.add(subs_section_label(stale), expand=True)
+                self._add_submodule_nodes(sub_node, submodules, sha_cache, depth=0)
+
+        self._apply_expansion_level()
+
+    def _start_loading(self) -> None:
+        t = threading.Thread(target=self._load_data_thread, daemon=True)
+        t.start()
+
+    def _load_data_thread(self) -> None:
+        self.call_from_thread(self._set_loading, True)
+        _get_token()
+        t_start = time.monotonic()
+        total = len(REPOS)
+        stop = self._stop
+
+        def stopped():
+            return stop.is_set()
+
+        def update_status(msg):
+            if not stopped():
+                self.call_from_thread(self._set_status, msg)
+
+        # Phase 1: HEAD + CI (parallel) — update labels as they arrive
+        update_status(f"Fetching HEAD + CI… (0/{total * 2})")
+        head_cache = {}  # repo -> (sha, date_str)
+        ci_cache = {}
+        ready = set()
+
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            head_futures = {
+                pool.submit(get_head_info, r): ("head", r) for r in REPOS
+            }
+            ci_futures = {
+                pool.submit(get_ci_runs, r): ("ci", r) for r in REPOS
+            }
+            all_futures = {**head_futures, **ci_futures}
+            done = 0
+            for future in as_completed(all_futures):
+                if stopped():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    return
+                kind, repo = all_futures[future]
+                if kind == "head":
+                    head_cache[repo] = future.result()  # (sha, date)
+                else:
+                    ci_cache[repo] = future.result()
+                done += 1
+                update_status(f"Fetching HEAD + CI… ({done}/{total * 2})")
+
+                if repo not in ready and repo in head_cache and repo in ci_cache:
+                    ready.add(repo)
+                    sha, date = head_cache[repo]
+                    self.call_from_thread(
+                        self._update_repo_label,
+                        repo,
+                        sha,
+                        date,
+                        ci_cache.get(repo, []),
+                    )
+
+        if stopped():
+            return
+        self._head_cache = head_cache
+
+        # Build sha-only cache for submodule lookups
+        sha_cache = {repo: info[0] for repo, info in head_cache.items() if info[0]}
+
+        # Phase 2: Submodule discovery (BFS, parallel at each depth level)
+        update_status("Fetching submodules…")
+        repo_refs = [(repo, sha_cache.get(repo)) for repo in REPOS]
+        submodule_cache = collect_submodules_bfs(repo_refs)
+
+        if stopped():
+            return
+
+        # Update all repo nodes with submodule data
+        for repo in REPOS:
+            subs = submodule_cache.get(repo, [])
+            self.call_from_thread(
+                self._update_repo_node,
+                repo,
+                sha_cache,
+                head_cache,
+                ci_cache.get(repo, []),
+                subs,
+            )
+
+        if stopped():
+            return
+
+        # Phase 3: External repo HEADs — re-update affected nodes as they arrive
+        external_repos = set()
+        external_to_repos = {}
+        for repo in REPOS:
+            for sub in submodule_cache.get(repo, []):
+                if sub["owner_repo"] and sub["owner_repo"] not in sha_cache:
+                    external_repos.add(sub["owner_repo"])
+                    external_to_repos.setdefault(sub["owner_repo"], set()).add(repo)
+
+        if external_repos:
+            update_status(f"Fetching external repos… (0/{len(external_repos)})")
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                futures = {
+                    pool.submit(get_head_info, r): r for r in external_repos
+                }
+                done = 0
+                for future in as_completed(futures):
+                    if stopped():
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        return
+                    ext_repo = futures[future]
+                    sha, date = future.result()
+                    if sha:
+                        sha_cache[ext_repo] = sha
+                    done += 1
+                    update_status(
+                        f"Fetching external repos… ({done}/{len(external_repos)})"
+                    )
+
+                    for affected_repo in external_to_repos.get(ext_repo, []):
+                        self.call_from_thread(
+                            self._update_repo_node,
+                            affected_repo,
+                            sha_cache,
+                            head_cache,
+                            ci_cache.get(affected_repo, []),
+                            submodule_cache.get(affected_repo, []),
+                        )
+
+        elapsed = time.monotonic() - t_start
+        api_calls = len(_timing)
+        update_status(f"{api_calls} API calls in {elapsed:.1f}s")
+        self.call_from_thread(self._set_loading, False)
+
+    def _set_status(self, msg: str) -> None:
+        self._fetch_status = msg
+        self._update_subtitle()
+
+    _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def _set_loading(self, loading: bool) -> None:
+        self._loading = loading
+        if loading:
+            self._spinner_idx = 0
+            self._spinner_timer = self.set_interval(0.1, self._spin)
+        elif self._spinner_timer:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        self._update_subtitle()
+
+    def _spin(self) -> None:
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._SPINNER_FRAMES)
+        self._update_subtitle()
+
+    def _update_subtitle(self) -> None:
+        level = self._expansion_level
+        level_str = f"Level {level}/3 — {self._LEVEL_NAMES[level]}"
+        if self._fetch_status:
+            text = f"{self._fetch_status}  ·  {level_str}"
+        else:
+            text = level_str
+        if self._loading:
+            frame = self._SPINNER_FRAMES[self._spinner_idx]
+            text = f"{frame} {text}"
+        self.sub_title = text
+
+    def _update_repo_label(self, repo, head, date, ci_runs) -> None:
+        """Update just the label (HEAD + CI + date), submodules still unknown."""
+        node = self._repo_nodes[repo]
+        owner, name = repo.split("/")
+        ci_ok_val = ci_ok(ci_runs)
+        node.set_label(repo_label(owner, name, head, date, ci_ok_val))
+        # Cache for sorting
+        self._repo_data.setdefault(repo, {}).update(
+            sha=head, date=date, ci_runs=ci_runs, ci_ok=ci_ok_val
+        )
+
+    def _update_repo_node(
+        self, repo, sha_cache, head_cache, ci_runs, submodules
+    ) -> None:
+        node = self._repo_nodes[repo]
+        owner, name = repo.split("/")
+        head_sha, head_date = head_cache.get(repo, (None, None))
+
+        # Compute submodule staleness
+        stale = 0
+        if submodules:
+            stale = sum(
+                1
+                for s in submodules
+                if s["pinned"]
+                and sha_cache.get(s["owner_repo"])
+                and s["pinned"] != sha_cache[s["owner_repo"]]
+            )
+        subs_ok_val = (stale == 0) if submodules else None
+        ci_ok_val = ci_ok(ci_runs)
+
+        node.set_label(repo_label(owner, name, head_sha, head_date, ci_ok_val, subs_ok_val))
+        node.remove_children()
+
+        # Cache for sorting
+        self._repo_data[repo] = {
+            "sha": head_sha,
+            "date": head_date,
+            "ci_runs": ci_runs,
+            "ci_ok": ci_ok_val,
+            "submodules": submodules,
+            "sha_cache": sha_cache,
+            "subs_ok": subs_ok_val,
+        }
+
+        # CI section with summary in header
+        if ci_runs:
+            ci_node = node.add(ci_section_label(ci_runs), expand=True)
+            for run in ci_runs:
+                label = Text()
+                label.append(f"  {run['name']}  ", style="dim")
+                label.append_text(ci_text(run["status"], run["conclusion"]))
+                ci_node.add_leaf(label)
+
+        # Submodule section with summary in header
+        if submodules:
+            sub_node = node.add(subs_section_label(stale), expand=True)
+            self._add_submodule_nodes(sub_node, submodules, sha_cache, depth=0)
+
+        # Re-apply current expansion level so new nodes respect it
+        self._apply_expansion_level()
+
+    def _add_submodule_nodes(self, parent, submodules, head_cache, depth):
+        i = 0
+        while i < len(submodules):
+            sub = submodules[i]
+            if sub["depth"] != depth:
+                i += 1
+                continue
+
+            latest = head_cache.get(sub["owner_repo"])
+            pinned_short = sub["pinned"][:7] if sub["pinned"] else "?"
+            latest_short = latest[:7] if latest else "?"
+
+            label = Text()
+            label.append(f"  {sub['path']}  ", style="")
+            label.append(f"{pinned_short}", style="dim")
+            if pinned_short != latest_short:
+                label.append(f" → {latest_short}", style="dim")
+            label.append("  ")
+            label.append_text(sub_status_text(sub["pinned"], latest))
+
+            # Collect children (next entries with depth+1)
+            children = []
+            j = i + 1
+            while j < len(submodules) and submodules[j]["depth"] > depth:
+                children.append(submodules[j])
+                j += 1
+
+            if children:
+                child_node = parent.add(label, expand=True)
+                self._add_submodule_nodes(child_node, children, head_cache, depth + 1)
+            else:
+                parent.add_leaf(label)
+
+            i = j if children else i + 1
+
+
+################################################################################
+
+if __name__ == "__main__":
+    app = RepoStatusApp()
+    app.run()
