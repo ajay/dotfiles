@@ -264,6 +264,7 @@ def sub_status_text(pinned, latest):
 
 COL_OWNER = 12
 COL_REPO = 24
+COL_STATUS = 9
 COL_BRANCH = 9
 COL_COMMIT = 9
 COL_DATE = 18
@@ -274,21 +275,21 @@ def repo_label(owner, name, branch=None, head=None, date=None, ci_ok=None, subs_
     t = Text()
     t.append(f"{owner:<{COL_OWNER}s}", style="dim")
     t.append(f"{name:<{COL_REPO}s}", style="bold")
+    if ci_ok is None and subs_ok is None:
+        t.append(f"{'…':<{COL_STATUS}s}", style="dim")
+    elif ci_ok is False or subs_ok is False:
+        t.append(f"{'✗':<{COL_STATUS}s}", style="red")
+    elif ci_ok and (subs_ok is True or subs_ok is None):
+        t.append(f"{'✓':<{COL_STATUS}s}", style="green")
+    else:
+        t.append(f"{'…':<{COL_STATUS}s}", style="dim")
     t.append(f"{branch or '…':<{COL_BRANCH}s}", style="dim")
     t.append(f"{head[:7] if head else '…':<{COL_COMMIT}s}", style="dim")
     t.append(f"{date or '…':<{COL_DATE}s}", style="dim")
-    if ci_ok is None and subs_ok is None:
-        t.append("…", style="dim")
-    elif ci_ok is False or subs_ok is False:
-        t.append("✗", style="red")
-    elif ci_ok and (subs_ok is True or subs_ok is None):
-        t.append("✓", style="green")
-    else:
-        t.append("…", style="dim")
     return t
 
 
-SORT_COLUMNS = ["owner", "repo", "branch", "commit", "updated", "status"]
+SORT_COLUMNS = ["owner", "repo", "status", "branch", "commit", "updated"]
 COL_HEADER_PAD = 7  # tree root indent + padding in header label
 
 
@@ -300,24 +301,21 @@ def col_header_text(sort_key="owner", sort_ascending=True):
     cols = [
         ("owner", COL_OWNER),
         ("repo", COL_REPO),
+        ("status", COL_STATUS),
         ("branch", COL_BRANCH),
         ("commit", COL_COMMIT),
         ("updated", COL_DATE),
-        ("status", 0),
     ]
     for name, width in cols:
         label = name + (arrow if name == sort_key else "")
-        if width:
-            t.append(f"{label:<{width}s}", style="bold dim")
-        else:
-            t.append(label, style="bold dim")
+        t.append(f"{label:<{width}s}", style="bold dim")
     return t
 
 
 def col_from_click_x(x):
     """Determine which column was clicked based on x offset."""
     x -= COL_HEADER_PAD
-    boundaries = [COL_OWNER, COL_REPO, COL_BRANCH, COL_COMMIT, COL_DATE]
+    boundaries = [COL_OWNER, COL_REPO, COL_STATUS, COL_BRANCH, COL_COMMIT, COL_DATE]
     pos = 0
     for i, w in enumerate(boundaries):
         pos += w
