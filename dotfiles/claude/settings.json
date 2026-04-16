@@ -78,8 +78,6 @@
       "Bash(sudo:*)",
       "Bash(wget:*)"
     ],
-    "deny": [
-      "Bash(jf sync:*)",
-    ]
+    "deny": ["Bash(jf sync:*)"]
   }
 }
