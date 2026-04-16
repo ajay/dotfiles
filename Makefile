@@ -25,6 +25,8 @@ endif
 
 DEPS += python3
 
+GIT_SUBMODULE_STALE_CHECK_EXCLUDE := pyyaml
+
 DOTBOT_BIN           := dotbot/dotbot/bin/dotbot
 DOTBOT_CONFIG        := dotbot.conf.yaml
 DOTBOT_FLAGS_PLUGINS := \
