@@ -27,8 +27,9 @@ DEPS += python3
 
 DOTBOT_BIN           := dotbot/dotbot/bin/dotbot
 DOTBOT_CONFIG        := dotbot.conf.yaml
-DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py \
-                       --plugin dotbot/plugins/dotbot-pip/pip.py
+DOTBOT_FLAGS_PLUGINS := \
+	--plugin dotbot/plugins/dotbot-directive/directive.py \
+	--plugin dotbot/plugins/dotbot-pip/pip.py
 DOTBOT_FLAGS_EXTRA   :=
 
 ci: git-check deps-check deps-versions lint
