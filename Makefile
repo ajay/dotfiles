@@ -31,7 +31,7 @@ DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py \
                        --plugin dotbot/plugins/dotbot-pip/pip.py
 DOTBOT_FLAGS_EXTRA   :=
 
-ci: git-check deps-check lint
+ci: git-check deps-check deps-versions lint
 	@## run CI checks
 
 install: git-submodule-update
