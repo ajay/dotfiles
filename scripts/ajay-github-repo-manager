@@ -425,6 +425,13 @@ class RepoStatusApp(App):
     Footer {
         background: $surface-darken-1;
     }
+    #source-path {
+        height: 1;
+        color: $text 30%;
+        background: $surface;
+        background-tint: $foreground 5%;
+        padding: 0 2;
+    }
     """
 
     BINDINGS = [
@@ -457,6 +464,7 @@ class RepoStatusApp(App):
         yield tree
         yield Static("", id="level-indicator")
         yield Footer()
+        yield Static(os.path.realpath(__file__), id="source-path")
 
     def on_mount(self) -> None:
         self._repo_nodes: dict[str, TreeNode] = {}
