@@ -21,6 +21,7 @@
 - clean:
     - '~'
     - '~/.config/fish'
+    - '~/.local/bin'
 
 - link:
     ~/.config/fish/config.fish: dotfiles/fish/config.fish
@@ -29,6 +30,7 @@
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc
+    ~/.local/bin/ajay-github-repo-manager: scripts/ajay-github-repo-manager
 
 - shell-pip:
   - pip:
