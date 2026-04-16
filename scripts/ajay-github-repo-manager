@@ -95,17 +95,18 @@ def gh_api(endpoint):
 
 
 def get_head_info(repo):
-    """Get HEAD SHA and commit date. Returns (sha, date_str) or (None, None)."""
+    """Get HEAD SHA, commit date, and branch. Returns (sha, date_str, branch) or (None, None, None)."""
+    branch = "main"
     data = gh_api(f"repos/{repo}/commits/main")
     if not data or "sha" not in data:
+        branch = "master"
         data = gh_api(f"repos/{repo}/commits/master")
     if data and "sha" in data:
         sha = data["sha"]
         date_raw = data.get("commit", {}).get("committer", {}).get("date", "")
-        # "2026-04-15T12:37:52Z" -> "2026-04-15 12:37"
         date_str = date_raw.replace("T", " ")[:16] if date_raw else ""
-        return sha, date_str
-    return None, None
+        return sha, date_str, branch
+    return None, None, None
 
 
 def get_ci_runs(repo):
@@ -263,15 +264,17 @@ def sub_status_text(pinned, latest):
 
 COL_OWNER = 12
 COL_REPO = 24
+COL_BRANCH = 9
 COL_COMMIT = 9
 COL_DATE = 18
 
 
-def repo_label(owner, name, head=None, date=None, ci_ok=None, subs_ok=None):
+def repo_label(owner, name, branch=None, head=None, date=None, ci_ok=None, subs_ok=None):
     """Build a rich Text label for a repo tree node with fixed-width columns."""
     t = Text()
     t.append(f"{owner:<{COL_OWNER}s}", style="dim")
     t.append(f"{name:<{COL_REPO}s}", style="bold")
+    t.append(f"{branch or '…':<{COL_BRANCH}s}", style="dim")
     t.append(f"{head[:7] if head else '…':<{COL_COMMIT}s}", style="dim")
     t.append(f"{date or '…':<{COL_DATE}s}", style="dim")
     if ci_ok is None and subs_ok is None:
@@ -285,21 +288,23 @@ def repo_label(owner, name, head=None, date=None, ci_ok=None, subs_ok=None):
     return t
 
 
-SORT_COLUMNS = ["owner", "repo", "commit", "updated", "status"]
-COL_HEADER_PAD = 4  # left padding on #col-header
+SORT_COLUMNS = ["owner", "repo", "branch", "commit", "updated", "status"]
+COL_HEADER_PAD = 7  # tree root indent + padding in header label
 
 
 def col_header_text(sort_key="owner", sort_ascending=True):
     """Build the column header row with sort indicator."""
     arrow = " ▲" if sort_ascending else " ▼"
+    # Pad to align with child nodes (tree guide adds ~5 chars for children vs root)
+    t = Text("   ")
     cols = [
         ("owner", COL_OWNER),
         ("repo", COL_REPO),
+        ("branch", COL_BRANCH),
         ("commit", COL_COMMIT),
         ("updated", COL_DATE),
         ("status", 0),
     ]
-    t = Text()
     for name, width in cols:
         label = name + (arrow if name == sort_key else "")
         if width:
@@ -312,7 +317,7 @@ def col_header_text(sort_key="owner", sort_ascending=True):
 def col_from_click_x(x):
     """Determine which column was clicked based on x offset."""
     x -= COL_HEADER_PAD
-    boundaries = [COL_OWNER, COL_REPO, COL_COMMIT, COL_DATE]
+    boundaries = [COL_OWNER, COL_REPO, COL_BRANCH, COL_COMMIT, COL_DATE]
     pos = 0
     for i, w in enumerate(boundaries):
         pos += w
@@ -381,7 +386,9 @@ class RepoTree(Tree):
             event.prevent_default()
             event.stop()
         elif event.key == "left":
-            if node.is_expanded:
+            if node == self.root:
+                pass  # don't collapse root (header row)
+            elif node.is_expanded:
                 node.collapse()
             elif node.parent and node.parent != self.root:
                 self.select_node(node.parent)
@@ -405,12 +412,11 @@ class RepoStatusApp(App):
         background: $surface;
     }
     #col-header {
-        padding: 0 2 0 4;
-        color: $text 60%;
-        height: auto;
+        display: none;
     }
     Tree {
         padding: 0 2;
+        overflow-x: auto;
     }
     Tree > .tree--cursor {
         background: $accent 30%;
@@ -431,6 +437,8 @@ class RepoStatusApp(App):
         Binding("ctrl+right", "expand_level", "Level +", show=False),
         Binding("ctrl+left", "collapse_level", "Level -", show=False),
         Binding("s", "toggle_submodules", "Toggle subs"),
+        Binding("alt+right", "scroll_right_fast", "Scroll right", show=False),
+        Binding("alt+left", "scroll_left_fast", "Scroll left", show=False),
     ]
 
     async def action_quit(self) -> None:
@@ -444,8 +452,9 @@ class RepoStatusApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static(col_header_text(), id="col-header")
-        tree: RepoTree = RepoTree("Repos", id="repo-tree")
-        tree.show_root = False
+        tree: RepoTree = RepoTree(col_header_text(), id="repo-tree")
+        tree.show_root = True
+        tree.root.expand()
         tree.guide_depth = 3
         yield tree
         yield Static("", id="level-indicator")
@@ -534,6 +543,9 @@ class RepoStatusApp(App):
                             sub.collapse()
             else:  # level 3
                 node.expand_all()
+        # Keep root (header row) always expanded
+        tree = self.query_one("#repo-tree", RepoTree)
+        tree.root.expand()
         self._update_level_indicator()
 
     def action_toggle_submodules(self) -> None:
@@ -554,26 +566,41 @@ class RepoStatusApp(App):
                 sub_node.parent.expand()
                 sub_node.expand_all()
 
+    def action_scroll_right_fast(self) -> None:
+        tree = self.query_one("#repo-tree", RepoTree)
+        tree.scroll_relative(x=10)
+
+    def action_scroll_left_fast(self) -> None:
+        tree = self.query_one("#repo-tree", RepoTree)
+        tree.scroll_relative(x=-10)
+
     def on_click(self, event) -> None:
-        """Handle clicks on the column header for sorting."""
+        """Handle clicks on the column header (tree root) for sorting."""
+        tree = self.query_one("#repo-tree", RepoTree)
+        # Check if click is on the root node (header row) by checking y position
+        # The root node is at y=0 in the tree's content area
         widget = event.widget
-        # Walk up to find if click was on #col-header
         while widget is not None:
-            if hasattr(widget, "id") and widget.id == "col-header":
-                col = col_from_click_x(event.x)
-                if col == self._sort_key:
-                    self._sort_ascending = not self._sort_ascending
-                else:
-                    self._sort_key = col
-                    self._sort_ascending = True
-                self._update_col_header()
-                self._rebuild_tree()
+            if hasattr(widget, "id") and widget.id == "repo-tree":
+                # Determine if click was on the root/header line
+                _, scroll_y = tree.scroll_offset
+                click_line = event.y + scroll_y
+                if click_line == 0:  # root node is line 0
+                    col = col_from_click_x(event.x)
+                    if col == self._sort_key:
+                        self._sort_ascending = not self._sort_ascending
+                    else:
+                        self._sort_key = col
+                        self._sort_ascending = True
+                    self._update_col_header()
+                    self._rebuild_tree()
                 return
             widget = getattr(widget, "parent", None)
 
     def _update_col_header(self) -> None:
-        header = self.query_one("#col-header", Static)
-        header.update(col_header_text(self._sort_key, self._sort_ascending))
+        label = col_header_text(self._sort_key, self._sort_ascending)
+        tree = self.query_one("#repo-tree", RepoTree)
+        tree.root.set_label(label)
 
     def _sort_value(self, repo, key):
         """Extract a sortable value for a repo by column key."""
@@ -583,6 +610,8 @@ class RepoStatusApp(App):
             return owner.lower()
         elif key == "repo":
             return name.lower()
+        elif key == "branch":
+            return data.get("branch") or ""
         elif key == "commit":
             return data.get("sha") or ""
         elif key == "updated":
@@ -619,13 +648,14 @@ class RepoStatusApp(App):
             data = self._repo_data.get(repo, {})
             sha = data.get("sha")
             date = data.get("date")
+            branch = data.get("branch")
             ci_runs = data.get("ci_runs")
             submodules = data.get("submodules")
             sha_cache = data.get("sha_cache", {})
             ci_ok_val = data.get("ci_ok")
             subs_ok_val = data.get("subs_ok")
 
-            label = repo_label(owner, name, sha, date, ci_ok_val, subs_ok_val)
+            label = repo_label(owner, name, branch, sha, date, ci_ok_val, subs_ok_val)
             node = tree.root.add(label, data={"repo": repo}, expand=False)
             self._repo_nodes[repo] = node
 
@@ -671,7 +701,7 @@ class RepoStatusApp(App):
 
         # Phase 1: HEAD + CI (parallel) — update labels as they arrive
         update_status(f"Fetching HEAD + CI… (0/{total * 2})")
-        head_cache = {}  # repo -> (sha, date_str)
+        head_cache = {}  # repo -> (sha, date_str, branch)
         ci_cache = {}
         ready = set()
 
@@ -690,7 +720,7 @@ class RepoStatusApp(App):
                     return
                 kind, repo = all_futures[future]
                 if kind == "head":
-                    head_cache[repo] = future.result()  # (sha, date)
+                    head_cache[repo] = future.result()  # (sha, date, branch)
                 else:
                     ci_cache[repo] = future.result()
                 done += 1
@@ -698,12 +728,13 @@ class RepoStatusApp(App):
 
                 if repo not in ready and repo in head_cache and repo in ci_cache:
                     ready.add(repo)
-                    sha, date = head_cache[repo]
+                    sha, date, branch = head_cache[repo]
                     self.call_from_thread(
                         self._update_repo_label,
                         repo,
                         sha,
                         date,
+                        branch,
                         ci_cache.get(repo, []),
                     )
 
@@ -758,7 +789,7 @@ class RepoStatusApp(App):
                         pool.shutdown(wait=False, cancel_futures=True)
                         return
                     ext_repo = futures[future]
-                    sha, date = future.result()
+                    sha, date, branch = future.result()
                     if sha:
                         sha_cache[ext_repo] = sha
                     done += 1
@@ -813,15 +844,15 @@ class RepoStatusApp(App):
             text = f"{frame} {text}"
         self.sub_title = text
 
-    def _update_repo_label(self, repo, head, date, ci_runs) -> None:
-        """Update just the label (HEAD + CI + date), submodules still unknown."""
+    def _update_repo_label(self, repo, head, date, branch, ci_runs) -> None:
+        """Update just the label (HEAD + CI + date + branch), submodules still unknown."""
         node = self._repo_nodes[repo]
         owner, name = repo.split("/")
         ci_ok_val = ci_ok(ci_runs)
-        node.set_label(repo_label(owner, name, head, date, ci_ok_val))
+        node.set_label(repo_label(owner, name, branch, head, date, ci_ok_val))
         # Cache for sorting
         self._repo_data.setdefault(repo, {}).update(
-            sha=head, date=date, ci_runs=ci_runs, ci_ok=ci_ok_val
+            sha=head, date=date, branch=branch, ci_runs=ci_runs, ci_ok=ci_ok_val
         )
 
     def _update_repo_node(
@@ -829,7 +860,7 @@ class RepoStatusApp(App):
     ) -> None:
         node = self._repo_nodes[repo]
         owner, name = repo.split("/")
-        head_sha, head_date = head_cache.get(repo, (None, None))
+        head_sha, head_date, head_branch = head_cache.get(repo, (None, None, None))
 
         # Compute submodule staleness
         stale = 0
@@ -844,13 +875,14 @@ class RepoStatusApp(App):
         subs_ok_val = (stale == 0) if submodules else None
         ci_ok_val = ci_ok(ci_runs)
 
-        node.set_label(repo_label(owner, name, head_sha, head_date, ci_ok_val, subs_ok_val))
+        node.set_label(repo_label(owner, name, head_branch, head_sha, head_date, ci_ok_val, subs_ok_val))
         node.remove_children()
 
         # Cache for sorting
         self._repo_data[repo] = {
             "sha": head_sha,
             "date": head_date,
+            "branch": head_branch,
             "ci_runs": ci_runs,
             "ci_ok": ci_ok_val,
             "submodules": submodules,
