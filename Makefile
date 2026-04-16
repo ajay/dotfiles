@@ -19,6 +19,9 @@ install: git-submodule-update
 		$(DOTBOT_FLAGS_EXTRA)          \
 		-vv
 
+install-dev:
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-dnf shell-meta-chef shell-git shell-sudo"
+
 install-lite:
 	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-dnf shell-meta-chef shell-sudo"
 
