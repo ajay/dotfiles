@@ -12,10 +12,9 @@ git-submodule-update:
 	git submodule sync --recursive
 	git submodule update --init --recursive
 
-ifneq ($(MAKECMDGOALS),git-submodule-update)
-ifneq (,$(shell git submodule status --recursive 2>/dev/null | grep '^[-+]'))
+ifneq ($(filter git-submodule-update install,$(MAKECMDGOALS)),)
+else ifneq (,$(shell git submodule status --recursive 2>/dev/null | grep '^[-+]'))
 $(error ERROR: git submodules not initialized or out of date; run `make git-submodule-update`)
-endif
 endif
 
 ################################################################################
