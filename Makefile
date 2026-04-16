@@ -1,6 +1,7 @@
 DOTBOT_BIN           := dotbot/dotbot/bin/dotbot
 DOTBOT_CONFIG        := dotbot.conf.yaml
-DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py
+DOTBOT_FLAGS_PLUGINS := --plugin dotbot/plugins/dotbot-directive/directive.py \
+                       --plugin dotbot/plugins/dotbot-pip/pip.py
 DOTBOT_FLAGS_EXTRA   :=
 
 .PHONY: git-submodule-update install install-lite install-no-chef

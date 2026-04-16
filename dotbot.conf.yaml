@@ -30,6 +30,13 @@
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc
 
+- shell-pip:
+  - pip:
+      file: scripts/requirements.txt
+      user: true
+      stdout: true
+      stderr: true
+
 - shell-dnf:
   - shell:
       - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom

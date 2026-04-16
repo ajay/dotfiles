@@ -1,3 +1,6 @@
 [submodule "dotbot/dotbot"]
 	path = dotbot/dotbot
 	url = git@github.com:ajay/dotbot.git
+[submodule "dotbot/plugins/dotbot-pip"]
+	path = dotbot/plugins/dotbot-pip
+	url = https://github.com/sobolevn/dotbot-pip.git
