@@ -29,6 +29,7 @@ except ImportError:
 REPOS = sorted([
     "ajay/ajay.github.io",
     "ajay/build-tools",
+    "ajay/dotfiles",
     "ajay/site-common",
     "ajay/site-hangsanfamily",
     "ajay/site-saxenafamily",

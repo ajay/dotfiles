@@ -4,3 +4,6 @@
 [submodule "dotbot/plugins/dotbot-pip"]
 	path = dotbot/plugins/dotbot-pip
 	url = https://github.com/sobolevn/dotbot-pip.git
+[submodule "tools/build-tools"]
+	path = tools/build-tools
+	url = git@github.com:ajay/build-tools.git
