@@ -139,13 +139,22 @@ install_extension() {
     log "Installing GNOME Shell extension: $EXT_UUID"
     mkdir -p "$EXT_DIR"
 
+    # Cover GJS-ESM era (shell 45+) up through the running shell. Computed
+    # at install time so a GNOME upgrade self-heals on next run instead of
+    # leaving the extension stuck OUT OF DATE.
+    local shell_major max_major versions_json
+    shell_major=$(gnome-shell --version | awk '{print $3}' | cut -d. -f1)
+    max_major=$shell_major
+    (( max_major < 48 )) && max_major=48
+    versions_json=$(seq 45 "$max_major" | sed 's/.*/"&"/' | paste -sd, -)
+
     # ── metadata.json ─────────────────────────────────────────────────────
-    cat > "$EXT_DIR/metadata.json" << 'METADATA'
+    cat > "$EXT_DIR/metadata.json" << METADATA
 {
     "uuid": "workspace-setup@local",
     "name": "Workspace Setup Helper",
     "description": "D-Bus interface for programmatic window positioning",
-    "shell-version": ["45", "46", "47", "48"],
+    "shell-version": [$versions_json],
     "version": 1
 }
 METADATA
@@ -273,7 +282,7 @@ export default class WorkspaceSetupExtension extends Extension {
     MoveResize(id, x, y, w, h) {
         const win = this._findWindow(id);
         if (!win) return false;
-        if (win.get_maximized())
+        if (win.get_maximize_flags())
             win.unmaximize(Meta.MaximizeFlags.BOTH);
         win.move_resize_frame(false, x, y, w, h);
         return true;
@@ -349,6 +358,18 @@ check_extension() {
     local state
     state=$(gnome-extensions show "$EXT_UUID" 2>/dev/null \
             | grep -oP 'State: \K.*' || echo "NOT_FOUND")
+
+    # OUT OF DATE typically means a GNOME Shell upgrade since the extension
+    # was installed. Refresh the on-disk metadata so the next Shell load
+    # picks up the new shell-version, but the running Shell will not re-read
+    # metadata.json without a restart — and on Wayland that means a logout.
+    if [[ "$state" == "OUT"* ]]; then
+        log "Extension state: $state — refreshing metadata on disk..."
+        install_extension
+        die "Extension metadata updated for GNOME Shell $(gnome-shell --version | awk '{print $3}').
+  GNOME does not re-read extension metadata while running, so you must:
+    log out and back in (Wayland), then re-run this script."
+    fi
 
     if [[ "$state" != "ACTIVE" && "$state" != "ENABLED" ]]; then
         log "Extension state: $state — attempting to enable..."
