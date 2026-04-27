@@ -33,6 +33,11 @@
     ~/.local/bin/ajay-github-repo-manager: scripts/ajay-github-repo-manager
     ~/.local/bin/ajay-workspace-setup: scripts/ajay-workspace-setup
 
+- shell-build-tools-deps:
+  - shell:
+      - - sudo -v && make -C tools/build-tools deps-install
+        - "=> shell-build-tools-deps: install build-tools deps"
+
 - shell-dnf:
   - shell:
       - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom

@@ -25,14 +25,15 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 **Makefile** is the entry point. It copies the submodule-check boilerplate from `tools/build-tools/makefiles/git.mk` (keep in sync manually), then includes all build-tools makefiles via `tools/build-tools/makefiles.mk`. Build-tools provides shared targets: `git-check`, `deps-check`, `deps-versions`, `lint`, `help`, etc.
 
 **dotbot.conf.yaml** defines the install pipeline as ordered steps:
-1. `defaults` — link settings (backup, create, relink)
-2. `shell-sudo` — cache sudo
-3. `shell-git` — pull, update submodules, check clean
-4. `clean` — ensure target directories exist
-5. `link` — symlink dotfiles to home directory
-6. `shell-dnf` — install/update Fedora packages
-7. `shell-pip` — install Python packages from `scripts/requirements.txt`
-8. `shell-meta-chef` — run Meta chef (soloctl)
+0. `defaults` — link settings (backup, create, relink)
+0. `shell-sudo` — cache sudo
+0. `shell-git` — pull, update submodules, check clean
+0. `clean` — ensure target directories exist
+0. `link` — symlink dotfiles to home directory
+0. `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
+0. `shell-dnf` — install/update Fedora packages
+0. `shell-pip` — install Python packages from `scripts/requirements.txt`
+0. `shell-meta-chef` — run Meta chef (soloctl)
 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 

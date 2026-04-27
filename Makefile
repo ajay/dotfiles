@@ -47,15 +47,15 @@ install: git-submodule-update
 		-vv
 
 install-dev:
-	@## install (skip dnf, chef, git, sudo)
-	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-dnf shell-meta-chef shell-git shell-sudo"
+	@## install (install-lite + skip shell-git)
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef shell-git"
 
 install-lite:
-	@## install (skip dnf, chef, sudo)
-	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-dnf shell-meta-chef shell-sudo"
+	@## install (skip shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef)
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef"
 
 install-no-chef:
-	@## install (skip chef)
+	@## install (skip shell-meta-chef)
 	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-meta-chef"
 
 ################################################################################
