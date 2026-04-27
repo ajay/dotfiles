@@ -54,6 +54,7 @@
           less
           meld
           python3-pip
+          remove-retired-packages
           source-highlight
           strace
           vim
@@ -68,6 +69,8 @@
         - "=> shell-dnf: autoremove"
       - - sudo -v && sudo akmods
         - "=> shell-dnf: akmods"
+      - - sudo -v && yes | sudo remove-retired-packages
+        - "=> shell-dnf: remove-retired-packages"
 
 - shell-pip:
   - pip:
