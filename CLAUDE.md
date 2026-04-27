@@ -14,11 +14,11 @@ make install-dev          # Install without dnf, chef, git, sudo steps
 make install-lite         # Install without dnf, chef, sudo
 make install-no-chef      # Install without chef
 make ci                   # Run CI checks (git-check, deps-check, deps-versions, lint)
-make git-submodule-update # Initialize and update all git submodules
+make git-submodule-update # git pull, then initialize and update all git submodules
 make help                 # List all available Make targets
 ```
 
-Submodules must be initialized before any target other than `git-submodule-update` — the Makefile enforces this with an error if they're stale.
+Only `make install` and `make git-submodule-update` auto-update submodules (and both run `git pull` first). All other targets — including `install-dev`/`install-lite`/`install-no-chef` and `ci` — error out if submodules are stale.
 
 ## Architecture
 
@@ -37,8 +37,8 @@ Submodules must be initialized before any target other than `git-submodule-updat
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 
 **dotbot plugins** (loaded via `--plugin` flags in Makefile):
-- `dotbot-directive` — custom dotbot directive support
-- `dotbot-pip` — pip install from requirements file
+- `dotbot/plugins/dotbot-directive/` — vendored (not a submodule); see `directive.py` for the directives it adds
+- `dotbot/plugins/dotbot-pip/` — submodule; pip install from requirements file
 
 ## Dotfiles Layout
 
@@ -46,10 +46,7 @@ Files under `dotfiles/` are symlinked to their home-directory locations by dotbo
 
 ## Scripts
 
-Scripts in `scripts/` are symlinked to `~/.local/bin/` and prefixed with `ajay-`:
-
-- **ajay-github-repo-manager** — Python TUI (Textual) that shows GitHub repo status: HEAD commit, CI workflow results, and submodule staleness across all repos listed in `REPOS`. Uses GitHub API via `gh auth token`. Add/remove repos by editing the `REPOS` list.
-- **ajay-workspace-setup** — Bash script that launches apps and tiles windows across GNOME workspaces using a custom D-Bus GNOME Shell extension. Edit the `LAYOUT` array to change the workspace configuration.
+Scripts in `scripts/` are symlinked to `~/.local/bin/` and prefixed with `ajay-`. Add/remove repos or layouts by editing the lists at the top of each script.
 
 ## CI
 
@@ -57,8 +54,4 @@ GitHub Actions workflow (`.github/workflows/make-ci.yml`) runs `make ci` on push
 
 ## Submodules
 
-- `dotbot/dotbot` — forked dotbot (`ajay/dotbot`)
-- `dotbot/plugins/dotbot-pip` — pip plugin (`sobolevn/dotbot-pip`)
-- `tools/build-tools` — shared Make infrastructure (`ajay/build-tools`)
-
-`GIT_SUBMODULE_STALE_CHECK_EXCLUDE := pyyaml` in the Makefile excludes pyyaml (a dotbot transitive dependency) from the CI staleness check.
+See `.gitmodules` for the canonical list. `GIT_SUBMODULE_STALE_CHECK_EXCLUDE := pyyaml` in the Makefile excludes pyyaml (a dotbot transitive dependency) from the CI staleness check.
