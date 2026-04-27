@@ -10,8 +10,8 @@ Personal dotfiles managed by [dotbot](https://github.com/anishathalye/dotbot) (f
 
 ```bash
 make install              # Install dotfiles (runs dotbot: symlinks, packages, pip, chef)
-make install-dev          # Install without dnf, chef, git, sudo steps
-make install-lite         # Install without dnf, chef, sudo
+make install-dev          # Install (skip sudo, build-tools-deps, dnf, chef, git)
+make install-lite         # Install (skip sudo, build-tools-deps, dnf, chef)
 make install-no-chef      # Install without chef
 make ci                   # Run CI checks (git-check, deps-check, deps-versions, lint)
 make git-submodule-update # git pull, then initialize and update all git submodules
@@ -25,15 +25,15 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 **Makefile** is the entry point. It copies the submodule-check boilerplate from `tools/build-tools/makefiles/git.mk` (keep in sync manually), then includes all build-tools makefiles via `tools/build-tools/makefiles.mk`. Build-tools provides shared targets: `git-check`, `deps-check`, `deps-versions`, `lint`, `help`, etc.
 
 **dotbot.conf.yaml** defines the install pipeline as ordered steps:
-0. `defaults` — link settings (backup, create, relink)
-0. `shell-sudo` — cache sudo
-0. `shell-git` — pull, update submodules, check clean
-0. `clean` — ensure target directories exist
-0. `link` — symlink dotfiles to home directory
-0. `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
-0. `shell-dnf` — install/update Fedora packages
-0. `shell-pip` — install Python packages from `scripts/requirements.txt`
-0. `shell-meta-chef` — run Meta chef (soloctl)
+- `defaults` — link settings (backup, create, relink)
+- `shell-sudo` — cache sudo
+- `shell-git` — pull, update submodules, check clean
+- `clean` — ensure target directories exist
+- `link` — symlink dotfiles to home directory
+- `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
+- `shell-dnf` — install/update Fedora packages
+- `shell-pip` — install Python packages from `scripts/requirements.txt`
+- `shell-meta-chef` — run Meta chef (soloctl)
 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 
