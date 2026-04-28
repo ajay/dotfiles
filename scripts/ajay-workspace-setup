@@ -14,10 +14,11 @@
 #   Install:  sudo dnf install jq
 #
 # Usage:
-#   ./workspace-setup.sh              Set up the workspace layout
-#   ./workspace-setup.sh --reset      Close all windows, then set up
-#   ./workspace-setup.sh --install    Install the helper extension only
-#   ./workspace-setup.sh --help       Show usage
+#   ./workspace-setup.sh                       Set up workspace (auto-pick layout by monitor count)
+#   ./workspace-setup.sh --layout NAME         Use a specific layout (e.g. dual, single)
+#   ./workspace-setup.sh --reset               Close all windows, then set up
+#   ./workspace-setup.sh --install             Install the helper extension only
+#   ./workspace-setup.sh --help                Show usage
 #
 set -euo pipefail
 
@@ -46,9 +47,15 @@ set -euo pipefail
 #   MONITOR    0-based monitor position (0 = leftmost, 1 = next, ...)
 #   POSITION   Tactile grid reference
 #   COMMAND    Shell command to launch the application
+#
+# Layouts are declared as bash arrays named LAYOUT_<NAME> (uppercase).
+# To add a layout, declare another array; --layout <name> will pick it up
+# automatically (matching is case-insensitive).  DEFAULT_LAYOUT_BY_MONITORS
+# below maps detected monitor count -> layout name used when --layout is
+# omitted; an unmapped count is an error.
 # ------------------------------------------------------------------------------
 
-LAYOUT=(
+LAYOUT_DUAL=(
     # ── Workspace 1 ──────────────────────────────────────────────────────────
     "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
     "1:1:Q-S:nautilus --new-window"          # Files left-half, right monitor
@@ -59,6 +66,25 @@ LAYOUT=(
     "2:1:E-R:ptyxis --new-window"            # Terminal top-right 1/4
     "2:1:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
     "2:1:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+)
+
+LAYOUT_SINGLE=(
+    # ── Workspace 1 ──────────────────────────────────────────────────────────
+    "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
+
+    # ── Workspace 2 ──────────────────────────────────────────────────────────
+    "2:0:Q-F:subl -n"                        # Sublime Text maximized, left mon
+
+    # ── Workspace 3 ──────────────────────────────────────────────────────────
+    "3:0:Q-W:ptyxis --new-window"            # Terminal top-left 1/4, left mon
+    "3:0:E-R:ptyxis --new-window"            # Terminal top-right 1/4
+    "3:0:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
+    "3:0:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+)
+
+declare -A DEFAULT_LAYOUT_BY_MONITORS=(
+    [1]="single"
+    [2]="dual"
 )
 
 # Grid dimensions (match your Tactile layout)
@@ -94,6 +120,11 @@ STATE_FILE="$HOME/.cache/workspace-setup-windows"
 log()  { printf '[workspace-setup] %s\n' "$*" >&2; }
 warn() { printf '[workspace-setup] WARNING: %s\n' "$*" >&2; }
 die()  { printf '[workspace-setup] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# Comma-separated, lowercase list of declared LAYOUT_<NAME> arrays.
+list_layouts() {
+    compgen -A variable | sed -n 's/^LAYOUT_\(.*\)/\1/p' | tr '[:upper:]' '[:lower:]' | paste -sd, -
+}
 
 # ── Dependency checks ────────────────────────────────────────────────────────
 
@@ -572,17 +603,25 @@ reset_windows() {
 
 main() {
     local do_reset=0 install_only=0
+    local requested_layout=""
 
-    for arg in "$@"; do
-        case "$arg" in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             --reset)   do_reset=1 ;;
             --install) install_only=1 ;;
+            --layout)
+                shift
+                [[ $# -gt 0 ]] || die "--layout requires a value (available: $(list_layouts))"
+                requested_layout="$1"
+                ;;
+            --layout=*) requested_layout="${1#--layout=}" ;;
             --help|-h)
                 sed -n '2,/^[^#]/{ /^#/s/^# \?//p }' "$0"
                 exit 0
                 ;;
-            *) die "Unknown option: $arg  (use --help)" ;;
+            *) die "Unknown option: $1  (use --help)" ;;
         esac
+        shift
     done
 
     check_deps
@@ -594,6 +633,23 @@ main() {
 
     check_extension
     detect_monitors
+
+    # Resolve which layout to use.
+    local layout_name="$requested_layout"
+    if [[ -z "$layout_name" ]]; then
+        layout_name="${DEFAULT_LAYOUT_BY_MONITORS[$MON_COUNT]:-}"
+        [[ -n "$layout_name" ]] || die "No default layout for $MON_COUNT monitor(s). Pass --layout NAME (available: $(list_layouts)) or add [$MON_COUNT]=... to DEFAULT_LAYOUT_BY_MONITORS."
+        log "Auto-selected layout '$layout_name' for $MON_COUNT monitor(s)."
+    else
+        log "Using layout '$layout_name' (--layout)."
+    fi
+
+    local layout_var="LAYOUT_${layout_name^^}"
+    declare -p "$layout_var" &>/dev/null \
+        || die "Unknown layout '$layout_name'. Available: $(list_layouts)"
+    local -n LAYOUT="$layout_var"
+    (( ${#LAYOUT[@]} > 0 )) \
+        || die "Layout '$layout_name' is empty. Edit $layout_var in $0."
 
     # Remember the launching terminal so we can refocus it at the end.
     local launcher_wid
