@@ -1,0 +1,384 @@
+#!/usr/bin/env python3
+"""Bump submodule pins across registered repos in topological order.
+
+Walks each consumer repo's .gitmodules, finds submodules whose source is
+also in the registry, and bumps the pin to the source's current default
+branch tip. Idempotent: re-running after a successful run is a no-op.
+
+Per-repo `git push` is batched once after all of that repo's bumps,
+so a consumer with N stale submodules makes N commits but only one push
+(and so triggers GitHub Actions only once).
+"""
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+DEFAULT_WORKDIR = Path.home() / "gdrive" / "work"
+
+# Topological order: sources before consumers. Order matters — consumers later
+# in the list see source repos already at their bumped tips (the precheck
+# fast-forwards every workdir to origin before any bumping starts).
+REPOS = [
+    {"name": "build-tools",           "owner": "ajay", "branch": "main"},
+    {"name": "site-common",           "owner": "ajay", "branch": "main"},
+    {"name": "ajay.github.io",        "owner": "ajay", "branch": "main"},
+    {"name": "dotfiles",              "owner": "ajay", "branch": "master"},
+    {"name": "site-hangsanfamily",    "owner": "ajay", "branch": "main"},
+    {"name": "site-saxenafamily",     "owner": "ajay", "branch": "main"},
+    {"name": "site-srivastavafamily", "owner": "ajay", "branch": "main"},
+]
+
+# Same regex as ajay-github-repo-manager — extracts owner/name from a clone URL.
+_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
+
+
+def url_to_name(url: str) -> Optional[str]:
+    m = _URL_RE.search(url)
+    if not m:
+        return None
+    return m.group(1).split("/")[-1]
+
+
+def _run(cmd, cwd=None, check=True):
+    result = subprocess.run(
+        cmd, cwd=str(cwd) if cwd else None, check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"command failed ({result.returncode}): {' '.join(cmd)}\n"
+            f"  cwd: {cwd}\n  stderr: {result.stderr.strip()}"
+        )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def git(args, cwd, check=True):
+    return _run(["git", *args], cwd=cwd, check=check)
+
+
+def _first_line(s: str) -> str:
+    return s.splitlines()[0] if s else ""
+
+
+def _short(sha: str) -> str:
+    """Shorten 40-char hex shas; pass through anything else (e.g. dry-run sentinels)."""
+    if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha):
+        return sha[:7]
+    return sha
+
+
+@dataclass
+class RepoState:
+    name: str
+    owner: str
+    branch: str
+    path: Path
+    head: str = ""
+    pulled: int = 0
+    error: str = ""
+    bumps: list = field(default_factory=list)  # (sub_name, old_short, new_short, commit_short)
+    pushed: bool = False
+    push_error: str = ""
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.name}"
+
+
+def _confirm_clone(slug: str, path: Path) -> bool:
+    try:
+        ans = input(f"Clone {slug} into {path}? [y/N] ").strip().lower()
+    except EOFError:
+        ans = ""
+    return ans in ("y", "yes")
+
+
+def precheck_repo(state: RepoState, args) -> bool:
+    """Bring the local clone to the tip of origin/<branch> if it's safe to.
+    Returns True on OK, False on failure (state.error set)."""
+    path = state.path
+
+    if not path.exists():
+        if args.dry_run:
+            state.error = f"MISSING (would prompt to clone into {path})"
+            return False
+        consent = args.yes or _confirm_clone(state.slug, path)
+        if not consent:
+            state.error = "MISSING (declined to clone)"
+            return False
+        url = f"git@github.com:{state.slug}.git"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rc, _, err = _run(["git", "clone", url, str(path)], check=False)
+        if rc != 0:
+            state.error = f"CLONE_FAILED: {_first_line(err)}"
+            return False
+
+    rc, branch, _ = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=path, check=False)
+    if rc != 0 or not branch:
+        state.error = "NOT_A_REPO_OR_DETACHED"
+        return False
+    if branch != state.branch:
+        state.error = f"WRONG_BRANCH ({branch}, expected {state.branch})"
+        return False
+
+    _, status, _ = git(["status", "--porcelain"], cwd=path)
+    if status:
+        n = len(status.splitlines())
+        state.error = f"DIRTY ({n} entr{'y' if n == 1 else 'ies'})"
+        return False
+
+    rc, _, err = git(["fetch", "origin", state.branch], cwd=path, check=False)
+    if rc != 0:
+        state.error = f"FETCH_FAILED: {_first_line(err)}"
+        return False
+
+    _, local_sha, _ = git(["rev-parse", "HEAD"], cwd=path)
+    _, remote_sha, _ = git(["rev-parse", f"origin/{state.branch}"], cwd=path)
+
+    if local_sha == remote_sha:
+        state.head = local_sha
+        return True
+
+    rc_behind, _, _ = git(
+        ["merge-base", "--is-ancestor", local_sha, remote_sha], cwd=path, check=False,
+    )
+    rc_ahead, _, _ = git(
+        ["merge-base", "--is-ancestor", remote_sha, local_sha], cwd=path, check=False,
+    )
+
+    if rc_behind == 0:  # local strictly behind origin → ff
+        _, count_str, _ = git(
+            ["rev-list", "--count", f"{local_sha}..{remote_sha}"], cwd=path,
+        )
+        n = int(count_str) if count_str.isdigit() else 0
+        # We already fetched, so merge --ff-only avoids a second network round-trip.
+        rc, _, err = git(
+            ["merge", "--ff-only", f"origin/{state.branch}"], cwd=path, check=False,
+        )
+        if rc != 0:
+            state.error = f"FF_FAILED: {_first_line(err)}"
+            return False
+        state.pulled = n
+        state.head = remote_sha
+        return True
+
+    if rc_ahead == 0:  # local has commits origin doesn't
+        _, count_str, _ = git(
+            ["rev-list", "--count", f"{remote_sha}..{local_sha}"], cwd=path,
+        )
+        n = int(count_str) if count_str.isdigit() else 0
+        state.error = f"DIVERGED-AHEAD ({n} unpushed commit{'s' if n != 1 else ''})"
+        return False
+
+    state.error = "DIVERGED (local and origin have unrelated commits)"
+    return False
+
+
+def parse_gitmodules(path: Path):
+    """Return list of (sub_path, sub_url) tuples for the repo at `path`."""
+    gm = path / ".gitmodules"
+    if not gm.exists():
+        return []
+    rc, out, _ = git(
+        ["config", "--file", str(gm), "--get-regexp", r"submodule\..*\.path"],
+        cwd=path, check=False,
+    )
+    if rc != 0 or not out:
+        return []
+    edges = []
+    for line in out.splitlines():
+        try:
+            key, sub_path = line.split(None, 1)
+        except ValueError:
+            continue
+        sub_section = key[len("submodule."):-len(".path")]
+        rc_url, url, _ = git(
+            ["config", "--file", str(gm), f"submodule.{sub_section}.url"],
+            cwd=path, check=False,
+        )
+        if rc_url == 0 and url:
+            edges.append((sub_path, url))
+    return edges
+
+
+def bump_repo(consumer: RepoState, by_name: dict, args) -> list:
+    """Bump every in-registry submodule in `consumer` to the source's current head.
+    Returns list of (sub_name, old_short, new_short, commit_short_or_DRYRUN).
+    Mutates consumer.head to the new HEAD if any commits are made (so later
+    consumers in the topological order see this repo's post-bump tip)."""
+    bumps = []
+    for sub_path, sub_url in parse_gitmodules(consumer.path):
+        sub_name = url_to_name(sub_url)
+        if sub_name not in by_name:
+            continue
+        source = by_name[sub_name]
+        rc, pinned, _ = git(["rev-parse", f"HEAD:{sub_path}"], cwd=consumer.path, check=False)
+        if rc != 0 or not pinned:
+            continue
+        latest = source.head
+        if pinned == latest:
+            continue
+        if args.dry_run:
+            bumps.append((sub_name, _short(pinned), _short(latest), "DRYRUN"))
+            continue
+        sub_full = consumer.path / sub_path
+        # The submodule clone may not have the new commit locally yet — fetch
+        # from its own origin before checking out.
+        git(["fetch", "origin", source.branch], cwd=sub_full, check=False)
+        rc_co, _, err = git(["checkout", latest], cwd=sub_full, check=False)
+        if rc_co != 0:
+            raise RuntimeError(f"checkout {_short(latest)} in {sub_full}: {err}")
+        # If the submodule itself contains submodules, sync them to whatever
+        # the newly-checked-out commit pins them at. Without this, the nested
+        # submodules stay at their previous HEADs and the parent reports the
+        # submodule as -dirty (matching pin but mismatched nested content),
+        # which would break idempotency on the next run.
+        git(["submodule", "update", "--init", "--recursive"], cwd=sub_full, check=False)
+        git(["add", sub_path], cwd=consumer.path)
+        msg = args.message or f"{sub_name}: update to {_short(latest)}"
+        git(["commit", "-m", msg], cwd=consumer.path)
+        _, commit_sha, _ = git(["rev-parse", "HEAD"], cwd=consumer.path)
+        bumps.append((sub_name, _short(pinned), _short(latest), _short(commit_sha)))
+
+    # Cascade: a downstream repo that depends on this one must bump to the
+    # post-bump tip, not the pre-bump tip. Update the in-memory source HEAD so
+    # later iterations of the bump loop compare against the right value.
+    if bumps:
+        if args.dry_run:
+            consumer.head = f"<post-{consumer.name}-bump>"
+        else:
+            _, new_head, _ = git(["rev-parse", "HEAD"], cwd=consumer.path)
+            consumer.head = new_head
+
+    return bumps
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--message", help="Override commit message for ALL bump commits this run.",
+    )
+    ap.add_argument(
+        "--no-push", action="store_true",
+        help="Skip the per-repo `git push` after that repo's bumps.",
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="Print intended bumps; make no commits, no clone prompts. Implies --no-push.",
+    )
+    ap.add_argument(
+        "--workdir", type=Path, default=DEFAULT_WORKDIR,
+        help=f"Override default {DEFAULT_WORKDIR}.",
+    )
+    ap.add_argument(
+        "--yes", action="store_true",
+        help="Auto-confirm clone prompts for missing repos.",
+    )
+    args = ap.parse_args()
+    if args.dry_run:
+        args.no_push = True
+
+    states = [
+        RepoState(
+            name=r["name"], owner=r["owner"], branch=r["branch"],
+            path=args.workdir / r["name"],
+        )
+        for r in REPOS
+    ]
+    width = max(len(s.slug) for s in states)
+
+    print("=== Precheck ===")
+    failed = []
+    for s in states:
+        try:
+            ok = precheck_repo(s, args)
+        except Exception as e:
+            ok = False
+            s.error = f"PRECHECK_EXCEPTION: {e}"
+        if ok:
+            extra = f"  pulled {s.pulled} commit{'s' if s.pulled != 1 else ''}" if s.pulled else ""
+            print(f"  {s.slug:<{width}}  OK   ({s.branch}, clean, {s.head[:7]}){extra}")
+        else:
+            failed.append(s)
+            print(f"  {s.slug:<{width}}  FAIL {s.error}")
+
+    if failed:
+        print()
+        print(f"Aborting: {len(failed)} repo{'s' if len(failed) != 1 else ''} failed precheck.")
+        return 1
+
+    print()
+    print("=== Bumping ===")
+    by_name = {s.name: s for s in states}
+    push_failed_count = 0
+
+    for consumer in states:
+        try:
+            consumer.bumps = bump_repo(consumer, by_name, args)
+        except Exception as e:
+            consumer.error = str(e)
+            print(f"  {consumer.slug:<{width}}  ERROR: {e}")
+            push_failed_count += 1
+            continue
+
+        if not consumer.bumps:
+            print(f"  {consumer.slug:<{width}}  (no submodule changes)")
+            continue
+
+        for i, (sub_name, old, new, commit) in enumerate(consumer.bumps):
+            slug_col = consumer.slug if i == 0 else ""
+            tag = "DRYRUN (would commit)" if commit == "DRYRUN" else f"✓ committed {commit}"
+            print(f"  {slug_col:<{width}}  {sub_name}: {old} → {new}   {tag}")
+
+        if args.no_push:
+            note = "skip push (--dry-run)" if args.dry_run else "skip push (--no-push)"
+            print(f"  {'':<{width}}  ↳ {note}")
+            continue
+
+        rc, _, err = git(["push", "origin", consumer.branch], cwd=consumer.path, check=False)
+        if rc == 0:
+            consumer.pushed = True
+            n = len(consumer.bumps)
+            print(f"  {'':<{width}}  ↳ pushed ({n} commit{'s' if n != 1 else ''})")
+        else:
+            consumer.push_error = err
+            push_failed_count += 1
+            print(f"  {'':<{width}}  ↳ PUSH FAILED: {_first_line(err)}")
+
+    print()
+    print("=== Summary ===")
+    total_bumps = sum(len(s.bumps) for s in states)
+    bumped_repos = sum(1 for s in states if s.bumps)
+    pushed = sum(1 for s in states if s.pushed)
+
+    if total_bumps == 0:
+        print("Everything up to date. ✓")
+        return 0
+
+    if push_failed_count:
+        print(
+            f"{total_bumps} bump commit(s) across {bumped_repos} repo(s); "
+            f"{push_failed_count} repo(s) had errors."
+        )
+        return 1
+
+    if args.no_push:
+        scope = "dry-run" if args.dry_run else "no push"
+        print(f"{total_bumps} bump commit(s) across {bumped_repos} repo(s) ({scope}).")
+    else:
+        print(
+            f"{total_bumps} bump commit(s) across {bumped_repos} repo(s), "
+            f"{pushed} push(es) — one per repo. ✓"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
