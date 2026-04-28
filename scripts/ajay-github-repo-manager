@@ -144,6 +144,34 @@ def get_gitmodules(repo, ref):
     return modules
 
 
+_EXCLUDE_RE = re.compile(
+    # Trailing tab/space only — NOT \s — so the match can't cross newlines.
+    r'^[ \t]*GIT_SUBMODULE_STALE_CHECK_EXCLUDE[ \t]*[:?+]?=[ \t]*(.*?)[ \t]*$',
+    re.MULTILINE,
+)
+
+
+def get_submodule_excludes(repo, ref):
+    """Return the set of submodule basenames listed in this repo's
+    top-level Makefile under GIT_SUBMODULE_STALE_CHECK_EXCLUDE.
+
+    Mirrors makefiles/git.mk: tokenizes on whitespace (matching the
+    `awk '{print $2}'` in the Make rule), takes the LAST assignment
+    seen (Make's simple-assignment last-write-wins).
+    """
+    data = gh_api(f"repos/{repo}/contents/Makefile?ref={ref}")
+    if not data or "content" not in data:
+        return set()
+    content = b64decode(data["content"]).decode(errors="replace")
+    matches = _EXCLUDE_RE.findall(content)
+    if not matches:
+        return set()
+    value = matches[-1]
+    if "#" in value:
+        value = value.split("#", 1)[0]
+    return set(value.split())
+
+
 def get_submodule_shas(repo, ref):
     data = gh_api(f"repos/{repo}/git/trees/{ref}?recursive=1")
     if not data or "tree" not in data:
@@ -165,10 +193,25 @@ def collect_submodules_bfs(repo_refs, max_depth=5):
 
     repo_refs: list of (repo, ref) tuples to discover submodules for.
     Returns: {repo: [submodule_dicts]} keyed by the original repo_refs entries.
-    Each submodule dict has: path, url, owner_repo, pinned, depth.
+    Each submodule dict has: path, url, owner_repo, pinned, depth, excluded.
+
+    `excluded` mirrors `make git-submodule-stale-check`: each top-level
+    repo's GIT_SUBMODULE_STALE_CHECK_EXCLUDE applies at every depth of
+    its tree (the Makefile expands the var once and reuses it in the
+    recursive shell function), matched against `path.basename`.
     """
     # results[original_repo] = [sub_dicts...]
     results = {repo: [] for repo, _ in repo_refs}
+
+    # Fetch each top-level repo's exclude list once, in parallel.
+    top_level_excludes = {repo: set() for repo, _ in repo_refs}
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        excl_futures = {
+            pool.submit(get_submodule_excludes, repo, ref): repo
+            for repo, ref in repo_refs if ref
+        }
+        for f in as_completed(excl_futures):
+            top_level_excludes[excl_futures[f]] = f.result()
 
     # Queue: (owner_repo, ref, original_repo, depth)
     # original_repo tracks which top-level repo this submodule belongs to
@@ -216,15 +259,19 @@ def collect_submodules_bfs(repo_refs, max_depth=5):
             for path, url in modules.items():
                 sub_owner = url_to_owner_repo(url)
                 sha = pinned.get(path)
-                sub_dict = {
-                    "path": path,
-                    "url": url,
-                    "owner_repo": sub_owner,
-                    "pinned": sha,
-                    "depth": depth,
-                }
+                # Match CI's git.mk: name = $${path##*/}
+                name = path.rsplit("/", 1)[-1]
+                # Per-orig dict so the `excluded` flag can vary based on
+                # each top-level's GIT_SUBMODULE_STALE_CHECK_EXCLUDE.
                 for orig in orig_repos:
-                    results[orig].append(sub_dict)
+                    results[orig].append({
+                        "path": path,
+                        "url": url,
+                        "owner_repo": sub_owner,
+                        "pinned": sha,
+                        "depth": depth,
+                        "excluded": name in top_level_excludes.get(orig, set()),
+                    })
 
                 if sha and sub_owner:
                     for orig in orig_repos:
@@ -355,7 +402,7 @@ def ci_section_label(ci_runs):
     return t
 
 
-def subs_section_label(stale_count):
+def subs_section_label(stale_count, skip_count=0):
     """Build label for Submodules section header."""
     t = Text("Submodules", style="bold dim")
     t.append("  ")
@@ -363,6 +410,8 @@ def subs_section_label(stale_count):
         t.append("✓ up to date", style="green")
     else:
         t.append(f"✗ {stale_count} stale", style="red")
+    if skip_count:
+        t.append(f"  ({skip_count} skipped)", style="dim")
     return t
 
 
@@ -678,11 +727,13 @@ class RepoStatusApp(App):
                 stale = sum(
                     1
                     for s in submodules
-                    if s["pinned"]
+                    if not s.get("excluded", False)
+                    and s["pinned"]
                     and sha_cache.get(s["owner_repo"])
                     and s["pinned"] != sha_cache[s["owner_repo"]]
                 )
-                sub_node = node.add(subs_section_label(stale), expand=True)
+                skipped = sum(1 for s in submodules if s.get("excluded"))
+                sub_node = node.add(subs_section_label(stale, skipped), expand=True)
                 self._add_submodule_nodes(sub_node, submodules, sha_cache, depth=0)
 
         self._apply_expansion_level()
@@ -868,16 +919,20 @@ class RepoStatusApp(App):
         owner, name = repo.split("/")
         head_sha, head_date, head_branch = head_cache.get(repo, (None, None, None))
 
-        # Compute submodule staleness
+        # Compute submodule staleness (skip CI-excluded entries to match
+        # what `git-submodule-stale-check` actually fails on).
         stale = 0
+        skipped = 0
         if submodules:
             stale = sum(
                 1
                 for s in submodules
-                if s["pinned"]
+                if not s.get("excluded", False)
+                and s["pinned"]
                 and sha_cache.get(s["owner_repo"])
                 and s["pinned"] != sha_cache[s["owner_repo"]]
             )
+            skipped = sum(1 for s in submodules if s.get("excluded"))
         subs_ok_val = (stale == 0) if submodules else None
         ci_ok_val = ci_ok(ci_runs)
 
@@ -907,7 +962,7 @@ class RepoStatusApp(App):
 
         # Submodule section with summary in header
         if submodules:
-            sub_node = node.add(subs_section_label(stale), expand=True)
+            sub_node = node.add(subs_section_label(stale, skipped), expand=True)
             self._add_submodule_nodes(sub_node, submodules, sha_cache, depth=0)
 
         # Re-apply current expansion level so new nodes respect it
@@ -931,7 +986,10 @@ class RepoStatusApp(App):
             if pinned_short != latest_short:
                 label.append(f" → {latest_short}", style="dim")
             label.append("  ")
-            label.append_text(sub_status_text(sub["pinned"], latest))
+            if sub.get("excluded"):
+                label.append("— skip", style="dim")
+            else:
+                label.append_text(sub_status_text(sub["pinned"], latest))
 
             # Collect children (next entries with depth+1)
             children = []
