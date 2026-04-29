@@ -59,11 +59,29 @@ confirm() {
     [[ "$ans" =~ ^[Yy]$ ]]
 }
 
+preview() {
+    printf '\n──── %s ────\n' "$1"
+    shift
+    printf '  $ %s\n' "$@"
+    printf '\n'
+}
+
 cd <ABSOLUTE_REPO_PATH>
 
+preview "Stage" "git add <path1> <path2> ..."
 confirm "Stage <N> file(s)?" || { echo "aborted"; exit 1; }
 git add <path1> <path2> ...
 
+preview "Commit" "git commit -m '<scope>: <subject>...'"
+echo "Commit message:"
+echo "─────────────────────────────────────────────"
+cat <<'EOF'
+<scope>: <subject>
+
+<optional body>
+EOF
+echo "─────────────────────────────────────────────"
+echo
 confirm "Create commit?" || { echo "aborted"; exit 1; }
 git commit -m "$(cat <<'EOF'
 <scope>: <subject>
@@ -72,21 +90,49 @@ git commit -m "$(cat <<'EOF'
 EOF
 )"
 
+preview "Push" "git push"
+echo "Upstream:        <remote>/<branch>"
+echo "Commits to push:"
+git log --oneline '@{u}..HEAD' || true
+echo
 confirm "Push to <remote>/<branch>?" || { echo "commit kept locally; not pushed"; exit 0; }
 git push
 ```
 
-If the branch has no upstream, replace the final `git push` with `git push -u origin <branch>` and adjust the prompt accordingly.
+If the branch has no upstream, the push block becomes:
+
+```bash
+preview "Push" "git push -u origin <branch>"
+echo "Branch <branch> has no upstream. Setting upstream to origin/<branch>."
+echo "Commits to push:"
+git log --oneline origin/<branch>..HEAD 2>/dev/null \
+    || git log --oneline -10        # fallback when remote ref doesn't exist yet
+echo
+confirm "Push to origin/<branch> (and set upstream)?" \
+    || { echo "commit kept locally; not pushed"; exit 0; }
+git push -u origin <branch>
+```
 
 ## Script template — sl / hg
 
-Same scaffolding (`#!/usr/bin/env bash`, header comments, flag parser, `confirm()`, `cd`), but the body becomes:
+Same scaffolding (`#!/usr/bin/env bash`, header comments, flag parser, `confirm()`, `preview()`, `cd`), but the body becomes:
 
 ```bash
-# Only emit this block if there are untracked files that need to be added:
+# Only emit this block when there are untracked files to add:
+preview "Add new files" "sl add <new_path1> <new_path2> ..."
 confirm "Add <K> new file(s)?" || { echo "aborted"; exit 1; }
 sl add <new_path1> <new_path2> ...
 
+preview "Commit" "sl commit -m '<scope>: <subject>...' <path1> <path2> ..."
+echo "Commit message:"
+echo "─────────────────────────────────────────────"
+cat <<'EOF'
+<scope>: <subject>
+
+<optional body>
+EOF
+echo "─────────────────────────────────────────────"
+echo
 confirm "Create commit?" || { echo "aborted"; exit 1; }
 sl commit -m "$(cat <<'EOF'
 <scope>: <subject>
@@ -107,3 +153,7 @@ Use `hg` in place of `sl` when the detected VCS is Mercurial.
 - The script header MUST include: the commit summary, generation timestamp, repo path, the staged file list, and the excluded-but-dirty file list (if any).
 - Quote heredoc delimiters as `<<'EOF'` so the embedded commit message is treated literally (no shell expansion of `$`, backticks, etc.).
 - If the working tree contains logically distinct changes, ask the user whether to bundle them into one commit or generate one script per group.
+- Every `confirm` MUST be immediately preceded by a `preview` block that lists the exact command(s) about to run.
+- The commit step's preview MUST also re-print the full commit message inside delimiter lines, so the user can re-read it at decision time.
+- The push step's preview MUST show the upstream target and the local commits that would land on the remote (`git log @{u}..HEAD --oneline`).
+- The `preview` helper definition (4-line `printf` shim) MUST be added near the top of the script alongside `confirm`.
