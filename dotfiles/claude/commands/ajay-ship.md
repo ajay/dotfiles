@@ -52,6 +52,10 @@ for arg in "$@"; do
     esac
 done
 
+# Force pagers off — generated scripts are linear, never paged.
+export GIT_PAGER=cat
+export PAGER=cat
+
 confirm() {
     (( YES )) && return 0
     if [[ ! -t 0 ]]; then
@@ -191,3 +195,4 @@ Use `hg` in place of `sl` when the detected VCS is Mercurial.
 - The `preview` helper definition (the multi-line-aware `printf` shim shown in the template) MUST be added near the top of the script alongside `confirm`.
 - Immediately after `cd <repo>`, the script MUST print `git status --short` (or `sl status` / `hg status`) under a `──── Current state ────` header, with no `confirm` gate.
 - Preview command strings MUST NOT use `...` to abbreviate file lists, message bodies, or any other content. Render the full command. For multi-line invocations, pass each line as a separate arg to `preview` so the helper indents continuation lines.
+- The script MUST `export GIT_PAGER=cat` and `export PAGER=cat` near the top (after the flag parser, before any VCS command runs) so pager-by-default git/sl/hg subcommands stream their output inline instead of trapping the user in less.
