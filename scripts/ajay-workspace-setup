@@ -106,6 +106,7 @@ TILE_GAP=0
 
 EXT_UUID="workspace-setup@local"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+EXT_EXPECTED_VERSION=2
 DBUS_DEST="org.gnome.Shell"
 DBUS_PATH="/org/gnome/Shell/Extensions/WorkspaceSetup"
 DBUS_IFACE="org.gnome.Shell.Extensions.WorkspaceSetup"
@@ -186,7 +187,7 @@ install_extension() {
     "name": "Workspace Setup Helper",
     "description": "D-Bus interface for programmatic window positioning",
     "shell-version": [$versions_json],
-    "version": 1
+    "version": 2
 }
 METADATA
 
@@ -315,6 +316,23 @@ export default class WorkspaceSetupExtension extends Extension {
         if (!win) return false;
         if (win.get_maximize_flags())
             win.unmaximize(Meta.MaximizeFlags.BOTH);
+
+        // Wayland clients can't be reliably moved across monitors via
+        // move_resize_frame alone — relocate explicitly first, then size.
+        const display = global.display;
+        const n = display.get_n_monitors();
+        let targetMon = -1;
+        for (let i = 0; i < n; i++) {
+            const g = display.get_monitor_geometry(i);
+            if (x >= g.x && x < g.x + g.width &&
+                y >= g.y && y < g.y + g.height) {
+                targetMon = i;
+                break;
+            }
+        }
+        if (targetMon >= 0 && win.get_monitor() !== targetMon)
+            win.move_to_monitor(targetMon);
+
         win.move_resize_frame(false, x, y, w, h);
         return true;
     }
@@ -399,6 +417,19 @@ check_extension() {
         install_extension
         die "Extension metadata updated for GNOME Shell $(gnome-shell --version | awk '{print $3}').
   GNOME does not re-read extension metadata while running, so you must:
+    log out and back in (Wayland), then re-run this script."
+    fi
+
+    # If the on-disk extension code is older than what this script expects,
+    # write the new files and force a logout — GNOME doesn't re-read extension
+    # JS while running, so the in-memory copy is stale even after `enable`.
+    local installed_version
+    installed_version=$(jq -r '.version // 0' "$EXT_DIR/metadata.json" 2>/dev/null || echo 0)
+    if (( installed_version < EXT_EXPECTED_VERSION )); then
+        log "Extension version $installed_version found, expected $EXT_EXPECTED_VERSION — refreshing on disk..."
+        install_extension
+        die "Extension files updated to version $EXT_EXPECTED_VERSION.
+  GNOME does not re-read extension code while running, so you must:
     log out and back in (Wayland), then re-run this script."
     fi
 
