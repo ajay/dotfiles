@@ -80,6 +80,11 @@
       stdout: true
       stderr: true
 
+- shell-misc:
+  - shell:
+      - - gsettings set org.gnome.shell disable-extension-version-validation true
+        - "=> shell-misc: gsettings disable-extension-version-validation"
+
 - shell-meta-chef:
   - shell:
       - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
