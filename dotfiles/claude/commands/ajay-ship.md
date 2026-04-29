@@ -54,9 +54,22 @@ done
 
 confirm() {
     (( YES )) && return 0
-    local ans
-    read -rp "$1 [y/N] " ans
-    [[ "$ans" =~ ^[Yy]$ ]]
+    if [[ ! -t 0 ]]; then
+        echo "Cannot prompt: stdin is not a tty. Re-run interactively or pass -y/--yes." >&2
+        return 1
+    fi
+    local key
+    while :; do
+        printf '%s [y/n] ' "$1"
+        IFS= read -rsn1 key
+        case "$key" in
+            y|Y) echo "y"; return 0 ;;
+            n|N) echo "n"; return 1 ;;
+            *)   echo
+                 echo "  (press 'y' to proceed or 'n' to abort)"
+                 ;;
+        esac
+    done
 }
 
 preview() {
