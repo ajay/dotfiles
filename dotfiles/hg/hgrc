@@ -7,3 +7,6 @@ ack = commitcloud-old-commits
 
 [extensions]
 extdiff =
+
+[extdiff]
+cmd.meld = meld

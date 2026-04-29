@@ -7,3 +7,9 @@
 [credential "https://gist.github.com"]
     helper =
     helper = !/usr/bin/gh auth git-credential
+[diff]
+    tool = meld
+[difftool]
+    prompt = false
+[alias]
+    meld = difftool --tool=meld --dir-diff
