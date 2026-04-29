@@ -62,26 +62,37 @@ confirm() {
 preview() {
     printf '\n──── %s ────\n' "$1"
     shift
-    printf '  $ %s\n' "$@"
+    if (( $# > 0 )); then
+        printf '  $ %s\n' "$1"
+        shift
+        for line in "$@"; do
+            printf '    %s\n' "$line"
+        done
+    fi
     printf '\n'
 }
 
 cd <ABSOLUTE_REPO_PATH>
 
-preview "Stage" "git add <path1> <path2> ..."
-confirm "Stage <N> file(s)?" || { echo "aborted"; exit 1; }
-git add <path1> <path2> ...
-
-preview "Commit" "git commit -m '<scope>: <subject>...'"
-echo "Commit message:"
-echo "─────────────────────────────────────────────"
-cat <<'EOF'
-<scope>: <subject>
-
-<optional body>
-EOF
-echo "─────────────────────────────────────────────"
+echo "──── Current state ────"
+git status --short
 echo
+
+preview "Stage" \
+    "git add \\" \
+    "<path1> \\" \
+    "<path2>"
+confirm "Stage <N> file(s)?" || { echo "aborted"; exit 1; }
+git add <path1> <path2>
+
+preview "Commit" \
+    "git commit -m \"\$(cat <<'EOF'" \
+    "<scope>: <subject>" \
+    "" \
+    "<optional body line 1>" \
+    "<optional body line 2>" \
+    "EOF" \
+    ")\""
 confirm "Create commit?" || { echo "aborted"; exit 1; }
 git commit -m "$(cat <<'EOF'
 <scope>: <subject>
@@ -98,6 +109,8 @@ echo
 confirm "Push to <remote>/<branch>?" || { echo "commit kept locally; not pushed"; exit 0; }
 git push
 ```
+
+For a single-file stage, `preview "Stage" "git add <path>"` (one arg) is fine — the helper handles both forms.
 
 If the branch has no upstream, the push block becomes:
 
@@ -118,28 +131,34 @@ git push -u origin <branch>
 Same scaffolding (`#!/usr/bin/env bash`, header comments, flag parser, `confirm()`, `preview()`, `cd`), but the body becomes:
 
 ```bash
-# Only emit this block when there are untracked files to add:
-preview "Add new files" "sl add <new_path1> <new_path2> ..."
-confirm "Add <K> new file(s)?" || { echo "aborted"; exit 1; }
-sl add <new_path1> <new_path2> ...
-
-preview "Commit" "sl commit -m '<scope>: <subject>...' <path1> <path2> ..."
-echo "Commit message:"
-echo "─────────────────────────────────────────────"
-cat <<'EOF'
-<scope>: <subject>
-
-<optional body>
-EOF
-echo "─────────────────────────────────────────────"
+echo "──── Current state ────"
+sl status
 echo
+
+# Only emit this block when there are untracked files to add:
+preview "Add new files" \
+    "sl add \\" \
+    "<new_path1> \\" \
+    "<new_path2>"
+confirm "Add <K> new file(s)?" || { echo "aborted"; exit 1; }
+sl add <new_path1> <new_path2>
+
+preview "Commit" \
+    "sl commit -m \"\$(cat <<'EOF'" \
+    "<scope>: <subject>" \
+    "" \
+    "<optional body>" \
+    "EOF" \
+    ")\" \\" \
+    "<path1> \\" \
+    "<path2>"
 confirm "Create commit?" || { echo "aborted"; exit 1; }
 sl commit -m "$(cat <<'EOF'
 <scope>: <subject>
 
 <optional body>
 EOF
-)" <path1> <path2> ...
+)" <path1> <path2>
 
 # No push step — fbsource workflow uses arc diff separately.
 ```
@@ -154,6 +173,8 @@ Use `hg` in place of `sl` when the detected VCS is Mercurial.
 - Quote heredoc delimiters as `<<'EOF'` so the embedded commit message is treated literally (no shell expansion of `$`, backticks, etc.).
 - If the working tree contains logically distinct changes, ask the user whether to bundle them into one commit or generate one script per group.
 - Every `confirm` MUST be immediately preceded by a `preview` block that lists the exact command(s) about to run.
-- The commit step's preview MUST also re-print the full commit message inside delimiter lines, so the user can re-read it at decision time.
+- The commit step's preview MUST render the literal bash invocation (heredoc form) including every line of the message body. No `...` truncation.
 - The push step's preview MUST show the upstream target and the local commits that would land on the remote (`git log @{u}..HEAD --oneline`).
-- The `preview` helper definition (4-line `printf` shim) MUST be added near the top of the script alongside `confirm`.
+- The `preview` helper definition (the multi-line-aware `printf` shim shown in the template) MUST be added near the top of the script alongside `confirm`.
+- Immediately after `cd <repo>`, the script MUST print `git status --short` (or `sl status` / `hg status`) under a `──── Current state ────` header, with no `confirm` gate.
+- Preview command strings MUST NOT use `...` to abbreviate file lists, message bodies, or any other content. Render the full command. For multi-line invocations, pass each line as a separate arg to `preview` so the helper indents continuation lines.
