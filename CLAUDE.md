@@ -10,7 +10,7 @@ Personal dotfiles managed by [dotbot](https://github.com/anishathalye/dotbot) (f
 
 ```bash
 make install              # Install dotfiles (runs dotbot: symlinks, packages, pip, chef)
-make install-dev          # Install (skip sudo, build-tools-deps, dnf, chef, git)
+make install-dev          # install-lite + skip shell-git (no pull/submodule update/dirty check)
 make install-lite         # Install (skip sudo, build-tools-deps, dnf, chef)
 make install-no-chef      # Install without chef
 make ci                   # Run CI checks (git-check, deps-check, deps-versions, lint)
@@ -33,17 +33,20 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
 - `shell-dnf` — install/update Fedora packages
 - `shell-pip` — install Python packages from `scripts/requirements.txt`
+- `shell-misc` — misc gsettings tweaks (e.g., disable GNOME extension version check)
 - `shell-meta-chef` — run Meta chef (soloctl)
 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 
 **dotbot plugins** (loaded via `--plugin` flags in Makefile):
-- `dotbot/plugins/dotbot-directive/` — vendored (not a submodule); see `directive.py` for the directives it adds
+- `dotbot/plugins/dotbot-directive/` — vendored (not a submodule). Wraps arbitrary directive names as skippable groups, so every `shell-*` step in `dotbot.conf.yaml` can be targeted by `--except <name>` / `--only <name>`. This is the mechanism behind install-dev/install-lite/install-no-chef.
 - `dotbot/plugins/dotbot-pip/` — submodule; pip install from requirements file
 
 ## Dotfiles Layout
 
 Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section.
+
+Custom Claude Code slash commands live under `dotfiles/claude/commands/` (symlinked to `~/.claude/commands`).
 
 ## Scripts
 
