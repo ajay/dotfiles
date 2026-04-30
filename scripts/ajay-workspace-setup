@@ -104,19 +104,25 @@ TILE_GAP=0
 #                               INTERNALS
 # ══════════════════════════════════════════════════════════════════════════════
 
-EXT_UUID="workspace-setup@local"
+EXT_UUID="ajay-workspace-setup-helper@local"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
-EXT_EXPECTED_VERSION=2
+EXT_EXPECTED_VERSION=3
 DBUS_DEST="org.gnome.Shell"
-DBUS_PATH="/org/gnome/Shell/Extensions/WorkspaceSetup"
-DBUS_IFACE="org.gnome.Shell.Extensions.WorkspaceSetup"
+DBUS_PATH="/org/gnome/Shell/Extensions/AjayWorkspaceSetup"
+DBUS_IFACE="org.gnome.Shell.Extensions.AjayWorkspaceSetup"
+
+# UUIDs of older versions of this extension. When detected, disable
+# them and delete their on-disk files so they don't appear alongside
+# the current one in `gnome-extensions list`.
+LEGACY_EXT_UUIDS=("workspace-setup@local")
 
 declare -A KEY_COL=([Q]=0 [W]=1 [E]=2 [R]=3 [A]=0 [S]=1 [D]=2 [F]=3)
 declare -A KEY_ROW=([Q]=0 [W]=0 [E]=0 [R]=0 [A]=1 [S]=1 [D]=1 [F]=1)
 
 MONITORS_JSON=""
 MON_COUNT=0
-STATE_FILE="$HOME/.cache/workspace-setup-windows"
+STATE_FILE="$HOME/.cache/ajay-workspace-setup-windows"
+LEGACY_STATE_FILE="$HOME/.cache/workspace-setup-windows"
 
 log()  { printf '[workspace-setup] %s\n' "$*" >&2; }
 warn() { printf '[workspace-setup] WARNING: %s\n' "$*" >&2; }
@@ -183,11 +189,11 @@ install_extension() {
     # ── metadata.json ─────────────────────────────────────────────────────
     cat > "$EXT_DIR/metadata.json" << METADATA
 {
-    "uuid": "workspace-setup@local",
-    "name": "Workspace Setup Helper",
+    "uuid": "ajay-workspace-setup-helper@local",
+    "name": "ajay-workspace-setup-helper",
     "description": "D-Bus interface for programmatic window positioning",
     "shell-version": [$versions_json],
-    "version": 2
+    "version": 3
 }
 METADATA
 
@@ -199,7 +205,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const IFACE = `
 <node>
-  <interface name="org.gnome.Shell.Extensions.WorkspaceSetup">
+  <interface name="org.gnome.Shell.Extensions.AjayWorkspaceSetup">
     <method name="GetMonitors">
       <arg type="s" direction="out" name="result"/>
     </method>
@@ -246,12 +252,12 @@ const IFACE = `
 </node>
 `;
 
-export default class WorkspaceSetupExtension extends Extension {
+export default class AjayWorkspaceSetupExtension extends Extension {
     enable() {
         this._dbus = Gio.DBusExportedObject.wrapJSObject(IFACE, this);
         this._dbus.export(
             Gio.DBus.session,
-            '/org/gnome/Shell/Extensions/WorkspaceSetup'
+            '/org/gnome/Shell/Extensions/AjayWorkspaceSetup'
         );
     }
 
@@ -399,7 +405,21 @@ EXTJS
 
 # ── Extension readiness check ────────────────────────────────────────────────
 
+cleanup_legacy_extensions() {
+    local uuid legacy_dir
+    for uuid in "${LEGACY_EXT_UUIDS[@]}"; do
+        legacy_dir="$HOME/.local/share/gnome-shell/extensions/$uuid"
+        if [[ -d "$legacy_dir" ]]; then
+            log "Removing legacy extension: $uuid"
+            gnome-extensions disable "$uuid" 2>/dev/null || true
+            rm -rf -- "$legacy_dir"
+        fi
+    done
+}
+
 check_extension() {
+    cleanup_legacy_extensions
+
     if [[ ! -d "$EXT_DIR" ]]; then
         install_extension
     fi
@@ -656,6 +676,11 @@ main() {
     done
 
     check_deps
+
+    # One-shot migration of the previous-session window-tracking cache.
+    if [[ -e "$LEGACY_STATE_FILE" && ! -e "$STATE_FILE" ]]; then
+        mv "$LEGACY_STATE_FILE" "$STATE_FILE"
+    fi
 
     if (( install_only )); then
         install_extension
