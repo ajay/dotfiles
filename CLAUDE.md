@@ -52,6 +52,10 @@ Custom Claude Code slash commands live under `dotfiles/claude/commands/` (symlin
 
 Scripts in `scripts/` are symlinked to `~/.local/bin/` and prefixed with `ajay-`. Add/remove repos or layouts by editing the lists at the top of each script.
 
+## Commit messages
+
+Format: `<area>[: <subarea>...]: <change>` — lowercase, imperative, no period. `area` is the top-level subdirectory or script name (e.g., `dotfiles: fish: functions: add maui-skoobe-dhara wrapper`, `ajay-workspace-setup: fix Wayland cross-monitor window placement`, `dotbot: install.conf: introduce shell-misc`).
+
 ## CI
 
 GitHub Actions workflow (`.github/workflows/make-ci.yml`) runs `make ci` on push to master and daily at midnight. Uses the reusable workflow from `ajay/build-tools`.
