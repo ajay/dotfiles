@@ -9,13 +9,15 @@ Personal dotfiles managed by [dotbot](https://github.com/anishathalye/dotbot) (f
 ## Commands
 
 ```bash
-make install              # Install dotfiles (runs dotbot: symlinks, packages, pip, chef)
-make install-dev          # install-lite + skip shell-git (no pull/submodule update/dirty check)
-make install-lite         # Install (skip sudo, build-tools-deps, dnf, chef)
-make install-no-chef      # Install without chef
-make ci                   # Run CI checks (git-check, deps-check, deps-versions, lint)
-make git-submodule-update # git pull, then initialize and update all git submodules
-make help                 # List all available Make targets
+make install              # install dotfiles (runs git pull + submodule update, then dotbot)
+make install-dev          # install (install-lite + skip shell-git)
+make install-lite         # install (skip shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef)
+make install-no-chef      # install (skip shell-meta-chef)
+make ci                   # run CI checks (git-check, deps-check, deps-versions, lint)
+make lint                 # check formatting + run linters (prettier + htmlhint; HTML/CSS/JS/JSON only)
+make format               # auto-format files in place (prettier --write)
+make git-submodule-update # initialize and update git submodules (also runs git pull)
+make help                 # this menu
 ```
 
 Only `make install` and `make git-submodule-update` auto-update submodules (and both run `git pull` first). All other targets — including `install-dev`/`install-lite`/`install-no-chef` and `ci` — error out if submodules are stale.
