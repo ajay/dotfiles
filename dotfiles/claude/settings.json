@@ -1,5 +1,15 @@
 {
+  "env": {
+    "BUCK2_TEST_DISABLE_DAEMON_CGROUP": "true"
+  },
+  "model": "opus[1m]",
+  "effortLevel": "xhigh",
+  "fastMode": true,
   "permissions": {
+    "allowedUsbDevices": [
+      {"vid": "1366", "pid": "*"},
+      {"vid": "0403", "pid": "6015"}
+    ],
     "allow": [
       "Bash(arc browse:*)",
       "Bash(arc diff-details:*)",

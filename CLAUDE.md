@@ -46,7 +46,7 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 
 ## Dotfiles Layout
 
-Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` lives in the repo but is currently **not** linked; only `dotfiles/claude/commands/` is.
+Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` is intentionally not symlinked; the `claude` fish function passes it via `--settings`, so it acts as the user-layer settings for fish-launched Claude Code sessions.
 
 ## Scripts
 
