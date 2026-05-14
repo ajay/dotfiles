@@ -46,13 +46,15 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 
 ## Dotfiles Layout
 
-Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section.
-
-Custom Claude Code slash commands live under `dotfiles/claude/commands/` (symlinked to `~/.claude/commands`).
+Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` lives in the repo but is currently **not** linked; only `dotfiles/claude/commands/` is.
 
 ## Scripts
 
-Scripts in `scripts/` are symlinked to `~/.local/bin/` and prefixed with `ajay-`. Add/remove repos or layouts by editing the lists at the top of each script.
+Scripts symlinked to `~/.local/bin/` are listed individually under `link` in `dotbot.conf.yaml` (each prefixed `ajay-`). Other files in `scripts/` (e.g. `requirements.txt`, `scm-prompt-echo.sh`) are consumed in place, not linked. Per-script config — repo lists for `ajay-github-*`, monitor/workspace layouts for `ajay-workspace-setup` — lives at the top of each script.
+
+## TODO
+
+`TODO.md` tracks pending dotfile work. Append to `# TODO`; move items to `# Done` when shipped.
 
 ## Commit messages
 
