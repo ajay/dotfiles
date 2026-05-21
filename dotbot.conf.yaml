@@ -76,7 +76,9 @@
 - shell-pip:
   - pip:
       file: scripts/requirements.txt
+      binary: python3 -m pip
       user: true
+      upgrade: true
       stdout: true
       stderr: true
 
