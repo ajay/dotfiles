@@ -42,7 +42,7 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 
 **dotbot plugins** (loaded via `--plugin` flags in Makefile):
 - `dotbot/plugins/dotbot-directive/` — vendored (not a submodule). Wraps arbitrary directive names as skippable groups, so every `shell-*` step in `dotbot.conf.yaml` can be targeted by `--except <name>` / `--only <name>`. This is the mechanism behind install-dev/install-lite/install-no-chef.
-- `dotbot/plugins/dotbot-pip/` — submodule; pip install from requirements file
+- `dotbot/plugins/dotbot-pip/` — vendored; pip install from requirements file
 
 ## Dotfiles Layout
 
