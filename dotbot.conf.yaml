@@ -64,7 +64,7 @@
         - "=> shell-dnf: Installing packages"
       - - sudo -v && sudo dnf -y config-manager setopt google-chrome.enabled=1 && sudo dnf -y install google-chrome-stable
         - "=> shell-dnf: Installing Google Chrome"
-      - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf install sublime-text
+      - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf -y config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf -y install sublime-text
         - "=> shell-dnf: Installing Sublime Text"
       - - sudo -v && sudo dnf -y autoremove
         - "=> shell-dnf: autoremove"
