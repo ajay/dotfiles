@@ -85,7 +85,7 @@
 
 - shell-chsh:
   - shell:
-      - - test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }
+      - - 'test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }'
         - "=> shell-chsh: set default shell to fish"
 
 - shell-gsettings:
