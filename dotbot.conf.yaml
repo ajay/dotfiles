@@ -44,6 +44,7 @@
       - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
         - "=> shell-dnf: Update"
       - - sudo -v && sudo dnf -y install
+          akmods
           ansifilter
           apcalc
           fedora-workstation-repositories
