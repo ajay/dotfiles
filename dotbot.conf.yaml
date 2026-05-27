@@ -85,6 +85,8 @@
 
 - shell-misc:
   - shell:
+      - - test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }
+        - "=> shell-misc: set default shell to fish"
       - - gsettings set org.gnome.shell disable-extension-version-validation true
         - "=> shell-misc: gsettings disable-extension-version-validation"
 
