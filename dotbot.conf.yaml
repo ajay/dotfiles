@@ -83,12 +83,38 @@
       stdout: true
       stderr: true
 
-- shell-misc:
+- shell-chsh:
   - shell:
       - - test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }
-        - "=> shell-misc: set default shell to fish"
+        - "=> shell-chsh: set default shell to fish"
+
+- shell-gsettings:
+  - shell:
       - - gsettings set org.gnome.shell disable-extension-version-validation true
-        - "=> shell-misc: gsettings disable-extension-version-validation"
+        - "=> shell-gsettings: disable extension version validation"
+      - - gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+        - "=> shell-gsettings: dark style"
+      - - gsettings set org.gnome.mutter dynamic-workspaces false
+        - "=> shell-gsettings: fixed number of workspaces"
+      - - gsettings set org.gnome.desktop.wm.preferences num-workspaces 6
+        - "=> shell-gsettings: 6 workspaces"
+      - - gsettings set org.gnome.mutter workspaces-only-on-primary false
+        - "=> shell-gsettings: workspaces on all displays"
+      - - gsettings set org.gnome.desktop.interface clock-show-weekday true
+        - "=> shell-gsettings: clock show weekday"
+      - - gsettings set org.gnome.desktop.interface clock-show-date true
+        - "=> shell-gsettings: clock show date"
+      - - gsettings set org.gnome.desktop.interface clock-show-seconds true
+        - "=> shell-gsettings: clock show seconds"
+      - - gsettings set org.gnome.desktop.calendar show-weekdate true
+        - "=> shell-gsettings: calendar show week numbers"
+
+- shell-timezone:
+  - shell:
+      - - gsettings set org.gnome.desktop.datetime automatic-timezone false
+        - "=> shell-timezone: disable automatic timezone"
+      - - sudo -v && sudo timedatectl set-timezone America/Los_Angeles
+        - "=> shell-timezone: set timezone to America/Los_Angeles"
 
 - shell-meta-chef:
   - shell:
