@@ -5,6 +5,8 @@
 	],
 	"installed_packages":
 	[
+		"BazelSyntax",
+		"Devicetree DTS Highlighting",
 		"fish",
 		"IncrementalDiff",
 		"Package Control",

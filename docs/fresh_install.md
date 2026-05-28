@@ -34,10 +34,6 @@
 
 - Sublime
     - Ctrl+Shift+P -> Install Package Control
-        - Ctrl+Shift+P -> Install Package ->
-            - MarkdownLivePreview
-            - Devicetree syntax highlighting
-            - BazelSyntax
 
 - Meta
     - `fbclone fbsource --eden`
