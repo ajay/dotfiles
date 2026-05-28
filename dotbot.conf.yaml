@@ -197,6 +197,17 @@
       - - sudo -v && sudo timedatectl set-timezone America/Los_Angeles
         - "=> shell-timezone: set timezone to America/Los_Angeles"
 
+- shell-wallpaper:
+  - shell:
+      - - cp dotfiles/wallpaper/flowers.jpg ~/.config/background
+        - "=> shell-wallpaper: set wallpaper"
+      - - gsettings set org.gnome.desktop.background picture-uri "file://$HOME/.config/background"
+        - "=> shell-wallpaper: picture-uri"
+      - - gsettings set org.gnome.desktop.background picture-uri-dark "file://$HOME/.config/background"
+        - "=> shell-wallpaper: picture-uri-dark"
+      - - gsettings set org.gnome.desktop.background picture-options 'zoom'
+        - "=> shell-wallpaper: picture-options zoom"
+
 - shell-meta-chef:
   - shell:
       - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
