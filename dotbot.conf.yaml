@@ -74,6 +74,15 @@
       - - sudo -v && yes | sudo remove-retired-packages
         - "=> shell-dnf: remove-retired-packages"
 
+- shell-insync:
+  - shell:
+      - - sudo -v && sudo rpm --import https://d2t3ff60b2tol4.cloudfront.net/repomd.xml.key
+        - "=> shell-insync: import GPG key"
+      - - 'printf "[insync]\nname=Insync\nbaseurl=http://yum.insync.io/fedora/\$releasever/\ngpgcheck=1\ngpgkey=https://d2t3ff60b2tol4.cloudfront.net/repomd.xml.key\nenabled=1\n" | sudo tee /etc/yum.repos.d/insync.repo'
+        - "=> shell-insync: add yum repo"
+      - - sudo -v && sudo dnf -y install insync
+        - "=> shell-insync: install"
+
 - shell-pip:
   - pip:
       file: scripts/requirements.txt
