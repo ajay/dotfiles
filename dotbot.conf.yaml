@@ -111,6 +111,17 @@
       - - gext install Vitals@CoreCoding.com
         - "=> shell-gnome-extensions: Vitals"
 
+- shell-gnome-extension-settings:
+  - shell:
+      - - dconf write /org/gnome/shell/extensions/vertical-workspaces/dash-position 3
+        - "=> shell-gnome-extension-settings: V-Shell dash position left"
+      - - dconf write /org/gnome/shell/extensions/vertical-workspaces/dash-position-adjust 0
+        - "=> shell-gnome-extension-settings: V-Shell dash centered"
+      - - dconf write /org/gnome/shell/extensions/vertical-workspaces/ws-thumbnails-position 1
+        - "=> shell-gnome-extension-settings: V-Shell ws thumbnails right"
+      - - dconf write /org/gnome/shell/extensions/vertical-workspaces/wst-position-adjust 0
+        - "=> shell-gnome-extension-settings: V-Shell ws thumbnails centered"
+
 - shell-chsh:
   - shell:
       - - 'test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }'
