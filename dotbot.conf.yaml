@@ -60,7 +60,6 @@
           gh
           gnome-tweaks
           htop
-          hydrapaper
           less
           meld
           python3-pip
@@ -75,6 +74,9 @@
         - "=> shell-dnf: Installing Google Chrome"
       - - sudo -v && sudo rpm -v --import https://download.sublimetext.com/sublimehq-rpm-pub.gpg && sudo dnf -y config-manager addrepo --overwrite --from-repofile=https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo && sudo dnf -y install sublime-text
         - "=> shell-dnf: Installing Sublime Text"
+      - - sudo -v && sudo dnf -y remove
+          hydrapaper
+        - "=> shell-dnf: Removing packages"
       - - sudo -v && sudo dnf -y autoremove
         - "=> shell-dnf: autoremove"
       - - sudo -v && sudo akmods
@@ -199,14 +201,12 @@
 
 - shell-wallpaper:
   - shell:
-      - - cp dotfiles/wallpaper/flowers.jpg ~/.config/background
-        - "=> shell-wallpaper: set wallpaper"
-      - - gsettings set org.gnome.desktop.background picture-uri "file://$HOME/.config/background"
+      - - gsettings set org.gnome.desktop.background picture-uri "file://$PWD/dotfiles/wallpaper/flowers.jpg"
         - "=> shell-wallpaper: picture-uri"
-      - - gsettings set org.gnome.desktop.background picture-uri-dark "file://$HOME/.config/background"
+      - - gsettings set org.gnome.desktop.background picture-uri-dark "file://$PWD/dotfiles/wallpaper/flowers.jpg"
         - "=> shell-wallpaper: picture-uri-dark"
-      - - gsettings set org.gnome.desktop.background picture-options 'zoom'
-        - "=> shell-wallpaper: picture-options zoom"
+      - - gsettings set org.gnome.desktop.background picture-options 'spanned'
+        - "=> shell-wallpaper: picture-options spanned"
 
 - shell-meta-chef:
   - shell:
