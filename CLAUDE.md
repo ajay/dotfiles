@@ -55,19 +55,20 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 
 ## Dotfiles Layout
 
-Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` is intentionally not symlinked; the `claude` fish function passes it via `--settings`, so it acts as the user-layer settings for fish-launched Claude Code sessions.
+Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` is intentionally not symlinked; the `claude` fish function passes it via `--settings`, so it acts as the user-layer settings for fish-launched Claude Code sessions. `dotfiles/claude/commands/` is symlinked to `~/.claude/commands/` and contains custom slash commands (ajay-flockboss, ajay-inspect-commit, ajay-ship).
 
 ## Scripts
 
 Scripts symlinked to `~/.local/bin/` are listed individually under `link` in `dotbot.conf.yaml` (each prefixed `ajay-`). Other files in `scripts/` (e.g. `requirements.txt`, `scm-prompt-echo.sh`) are consumed in place, not linked. Per-script config — repo lists for `ajay-github-*`, monitor/workspace layouts for `ajay-workspace-setup` — lives at the top of each script.
 
-## TODO
+## Docs
 
-`docs/TODO.md` tracks pending dotfile work. Append to `# TODO`; move items to `# Done` when shipped.
+- `docs/TODO.md` — tracks pending dotfile work. Append to `# TODO`; move items to `# Done` when shipped.
+- `docs/fresh_install.md` — step-by-step guide for setting up a new Fedora machine (BIOS, dual-boot, post-install).
 
 ## Commit messages
 
-Format: `<area>[: <subarea>...]: <change>` — lowercase, imperative, no period. `area` is the top-level subdirectory or script name (e.g., `dotfiles: fish: functions: add maui-skoobe-dhara wrapper`, `ajay-workspace-setup: fix Wayland cross-monitor window placement`, `dotbot: install.conf: introduce shell-misc`).
+Format: `<area>[: <subarea>...]: <change>` — lowercase, imperative, no period. `area` is the top-level subdirectory or script name (e.g., `dotfiles: fish: functions: add maui-skoobe-dhara wrapper`, `ajay-workspace-setup: fix Wayland cross-monitor window placement`, `dotbot.conf.yaml: introduce shell-misc`).
 
 ## CI
 
