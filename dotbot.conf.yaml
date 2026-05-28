@@ -100,6 +100,17 @@
       stdout: true
       stderr: true
 
+- shell-gnome-extensions:
+  - shell:
+      - - gext install vertical-workspaces@G-dH.github.com
+        - "=> shell-gnome-extensions: V-Shell"
+      - - gext install tactile@lundal.io
+        - "=> shell-gnome-extensions: Tactile"
+      - - gext install caffeine@patapon.info
+        - "=> shell-gnome-extensions: Caffeine"
+      - - gext install Vitals@CoreCoding.com
+        - "=> shell-gnome-extensions: Vitals"
+
 - shell-chsh:
   - shell:
       - - 'test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }'
