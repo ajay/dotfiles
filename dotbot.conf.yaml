@@ -39,10 +39,18 @@
       - - sudo -v && make -C tools/build-tools deps-install
         - "=> shell-build-tools-deps: install build-tools deps"
 
+- shell-dnf-update:
+  - if: 'test -d /opt/facebook'
+    shell:
+      - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
+        - "=> shell-dnf-update: Update (Meta)"
+  - if: 'test ! -d /opt/facebook'
+    shell:
+      - - sudo -v && sudo dnf -y update
+        - "=> shell-dnf-update: Update"
+
 - shell-dnf:
   - shell:
-      - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
-        - "=> shell-dnf: Update"
       - - sudo -v && sudo dnf -y install
           akmods
           ansifilter

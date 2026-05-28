@@ -48,11 +48,11 @@ install: git-submodule-update
 
 install-dev:
 	@## install (install-lite + skip shell-git)
-	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef shell-git"
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf-update shell-meta-chef shell-git"
 
 install-lite:
-	@## install (skip shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef)
-	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef"
+	@## install (skip shell-sudo shell-build-tools-deps shell-dnf-update shell-meta-chef)
+	$(MAKE) install DOTBOT_FLAGS_EXTRA="--except shell-sudo shell-build-tools-deps shell-dnf-update shell-meta-chef"
 
 install-no-chef:
 	@## install (skip shell-meta-chef)
