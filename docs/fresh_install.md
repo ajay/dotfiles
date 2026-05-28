@@ -8,8 +8,10 @@
 ## Setup
 
 - BIOS
-    - Thinkpad P1
-        - Config->Keyboard/Mouse: F1-F12 as primary function (set FN key to always be enabled)
+    - ThinkPad P1
+        - Config -> Keyboard/Mouse: F1-F12 as primary function (set FN key to always be enabled)
+    - ThinkStation P8
+        - Advanced -> CPU Setup -> C State Support: Disabled
 
 - Bootstrap
     - Setup git ssh keys (manual)
