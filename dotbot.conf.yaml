@@ -168,6 +168,8 @@
         - "=> shell-gsettings: show battery percentage"
       - - gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
         - "=> shell-gsettings: disable suspend when plugged in"
+      - - gsettings set org.gnome.shell favorite-apps "['org.gnome.Terminal.desktop', 'org.gnome.Nautilus.desktop', 'google-chrome.desktop']"
+        - "=> shell-gsettings: dock favorites"
 
 - shell-keybindings:
   - shell:
