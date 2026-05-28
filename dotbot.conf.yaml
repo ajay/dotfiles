@@ -121,6 +121,16 @@
         - "=> shell-gnome-extension-settings: V-Shell ws thumbnails right"
       - - dconf write /org/gnome/shell/extensions/vertical-workspaces/wst-position-adjust 0
         - "=> shell-gnome-extension-settings: V-Shell ws thumbnails centered"
+      - - dconf write /org/gnome/shell/extensions/vitals/icon-style 1
+        - "=> shell-gnome-extension-settings: Vitals icon style monochrome"
+      - - dconf write /org/gnome/shell/extensions/vitals/show-battery true
+        - "=> shell-gnome-extension-settings: Vitals show battery"
+      - - dconf write /org/gnome/shell/extensions/vitals/show-gpu true
+        - "=> shell-gnome-extension-settings: Vitals show GPU"
+      - - dconf write /org/gnome/shell/extensions/vitals/update-time 1
+        - "=> shell-gnome-extension-settings: Vitals update time 1s"
+      - - dconf write /org/gnome/shell/extensions/vitals/use-higher-precision true
+        - "=> shell-gnome-extension-settings: Vitals higher precision"
 
 - shell-chsh:
   - shell:
