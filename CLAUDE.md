@@ -50,12 +50,16 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 
 **dotbot plugins** (loaded via `--plugin` flags in Makefile):
-- `dotbot/plugins/dotbot-directive/` — vendored (not a submodule). Wraps arbitrary directive names as skippable groups, so every `shell-*` step in `dotbot.conf.yaml` can be targeted by `--except <name>` / `--only <name>`. This is the mechanism behind install-dev/install-lite/install-no-chef.
+- `dotbot/plugins/dotbot-directive/` — vendored (not a submodule). Wraps arbitrary directive names as skippable groups, so every `shell-*` step in `dotbot.conf.yaml` can be targeted by `--except <name>` / `--only <name>`. This is the mechanism behind install-dev/install-lite/install-no-chef. Also supports per-task `if: <test command>` conditions — `shell-dnf-update` uses `if: test -d /opt/facebook` to branch between Meta (`up-no-meta`) and non-Meta (`update`) flavors.
 - `dotbot/plugins/dotbot-pip/` — vendored; pip install from requirements file
 
 ## Dotfiles Layout
 
 Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Notably, `dotfiles/claude/settings.json` is intentionally not symlinked; the `claude` fish function passes it via `--settings`, so it acts as the user-layer settings for fish-launched Claude Code sessions. `dotfiles/claude/commands/` is symlinked to `~/.claude/commands/` and contains custom slash commands (ajay-flockboss, ajay-inspect-commit, ajay-ship).
+
+## Identity split: git vs hg
+
+`dotfiles/git/gitconfig` uses the personal address (`ajaysriv3@gmail.com`); `dotfiles/hg/hgrc` uses the Meta address (`ajaysriv@meta.com`). This is deliberate — git is for the `ajay/*` GitHub repos (dotfiles, build-tools, sites), hg is for fbsource. Don't unify them.
 
 ## Scripts
 
