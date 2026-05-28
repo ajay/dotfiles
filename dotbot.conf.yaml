@@ -109,6 +109,25 @@
       - - gsettings set org.gnome.desktop.calendar show-weekdate true
         - "=> shell-gsettings: calendar show week numbers"
 
+- shell-keybindings:
+  - shell:
+      - - gsettings set org.gnome.desktop.wm.keybindings switch-applications "[]"
+        - "=> shell-keybindings: switch-applications: unbind"
+      - - gsettings set org.gnome.desktop.wm.keybindings switch-applications-backward "[]"
+        - "=> shell-keybindings: switch-applications-backward: unbind"
+      - - gsettings set org.gnome.desktop.wm.keybindings switch-windows "['<Alt>Tab']"
+        - "=> shell-keybindings: switch-windows: Alt+Tab"
+      - - gsettings set org.gnome.desktop.wm.keybindings switch-windows-backward "['<Shift><Alt>Tab']"
+        - "=> shell-keybindings: switch-windows-backward: Shift+Alt+Tab"
+      - - gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/']"
+        - "=> shell-keybindings: register custom0"
+      - - gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ name 'Terminal'
+        - "=> shell-keybindings: custom0 name"
+      - - gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ command 'ptyxis --new-window'
+        - "=> shell-keybindings: custom0 command"
+      - - gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ binding '<Control><Alt>t'
+        - "=> shell-keybindings: custom0 binding"
+
 - shell-timezone:
   - shell:
       - - gsettings set org.gnome.desktop.datetime automatic-timezone false
