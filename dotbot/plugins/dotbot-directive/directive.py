@@ -1,4 +1,5 @@
 import dotbot
+from dotbot.util.common import shell_command
 
 
 class Directive(dotbot.Plugin):
@@ -51,9 +52,17 @@ class Directive(dotbot.Plugin):
 
         success = True
         for task in data:
+            test = task.get("if") if isinstance(task, dict) else None
+            if test is not None and not self._test_success(test):
+                self._log.info(
+                    "directive '{}': skipping (condition failed)".format(directive)
+                )
+                continue
+
             for action, action_data in task.items():
-                if action == "defaults":
-                    self._context.set_defaults(action_data)
+                if action in ("defaults", "if"):
+                    if action == "defaults":
+                        self._context.set_defaults(action_data)
                     continue
 
                 handled = False
@@ -82,3 +91,9 @@ class Directive(dotbot.Plugin):
 
         self._log.lowinfo("directive '{}': finished".format(directive))
         return success
+
+    def _test_success(self, command):
+        ret = shell_command(command, cwd=self._context.base_directory())
+        if ret != 0:
+            self._log.debug("Test '{}' returned false".format(command))
+        return ret == 0
