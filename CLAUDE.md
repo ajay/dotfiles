@@ -11,7 +11,7 @@ Personal dotfiles managed by [dotbot](https://github.com/anishathalye/dotbot) (f
 ```bash
 make install              # install dotfiles (runs git pull + submodule update, then dotbot)
 make install-dev          # install (install-lite + skip shell-git)
-make install-lite         # install (skip shell-sudo shell-build-tools-deps shell-dnf shell-meta-chef)
+make install-lite         # install (skip shell-build-tools-deps shell-dnf-update shell-meta-chef)
 make install-no-chef      # install (skip shell-meta-chef)
 make ci                   # run CI checks (git-check, deps-check, deps-versions, lint)
 make lint                 # check formatting + run linters (prettier + htmlhint; HTML/CSS/JS/JSON only)
@@ -33,9 +33,18 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `clean` — ensure target directories exist
 - `link` — symlink dotfiles to home directory
 - `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
-- `shell-dnf` — install/update Fedora packages
+- `shell-dnf-update` — `dnf update` (Meta-aware: uses `up-no-meta` on Meta machines)
+- `shell-dnf` — install Fedora packages
+- `shell-insync` — install Insync (Google Drive sync)
 - `shell-pip` — install Python packages from `scripts/requirements.txt`
-- `shell-misc` — misc gsettings tweaks (e.g., disable GNOME extension version check)
+- `shell-gnome-extensions` — install GNOME extensions (V-Shell, Tactile, Caffeine, Vitals)
+- `shell-gnome-extension-settings` — configure GNOME extension dconf settings
+- `shell-gsettings-tweaks` — minor gsettings overrides (titlebar buttons, middle-click paste)
+- `shell-chsh` — set default shell to fish
+- `shell-gsettings` — GNOME desktop settings (dark mode, workspaces, clock, dock favorites)
+- `shell-keybindings` — keyboard shortcuts (Alt+Tab window switching, Ctrl+Alt+T terminal)
+- `shell-timezone` — set timezone to America/Los_Angeles
+- `shell-wallpaper` — set desktop wallpaper
 - `shell-meta-chef` — run Meta chef (soloctl)
 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
@@ -54,7 +63,7 @@ Scripts symlinked to `~/.local/bin/` are listed individually under `link` in `do
 
 ## TODO
 
-`TODO.md` tracks pending dotfile work. Append to `# TODO`; move items to `# Done` when shipped.
+`docs/TODO.md` tracks pending dotfile work. Append to `# TODO`; move items to `# Done` when shipped.
 
 ## Commit messages
 
