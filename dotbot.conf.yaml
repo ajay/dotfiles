@@ -132,6 +132,13 @@
       - - dconf write /org/gnome/shell/extensions/vitals/use-higher-precision true
         - "=> shell-gnome-extension-settings: Vitals higher precision"
 
+- shell-gsettings-tweaks:
+  - shell:
+      - - gsettings set org.gnome.desktop.wm.preferences button-layout 'appmenu:close'
+        - "=> shell-gsettings-tweaks: titlebar close button only"
+      - - gsettings set org.gnome.desktop.interface gtk-enable-primary-paste true
+        - "=> shell-gsettings-tweaks: enable middle-click paste"
+
 - shell-chsh:
   - shell:
       - - 'test "$(getent passwd $USER | cut -d: -f7)" = "/usr/bin/fish" || { sudo -v && sudo chsh -s /usr/bin/fish $USER; }'
