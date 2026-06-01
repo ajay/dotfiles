@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Fix or reclone the on-disk checkout of registered GitHub repos.
+
+Two modes, both dry-run by default (use --apply to actually mutate):
+
+  fix (default)  Lossless cleanup of an existing checkout:
+                   - delete untracked '* (2)*' files (Drive conflict copies)
+                   - `git checkout -- .` at every level (top + recursive
+                     submodule foreach) to restore mode + content from index
+                   - `git submodule update --init --recursive` to re-pin
+                   - if the repo dir doesn't exist, clone it
+                 Preflight: walks the tree (incl. nested submodules) and
+                 refuses any repo with real content edits (numstat > 0),
+                 listing the offending files for manual review.
+
+  --reclone     Nuclear: `rm -rf <repo>` then `git clone`. Each repo asks
+                for [y/N] confirmation (unless --yes). Reclone of a repo
+                with unpushed commits is SKIPPED even with --yes, because
+                --yes shouldn't silently discard work.
+
+Positional REPO names filter the operation; bare invocation runs across
+every active entry in REPOS. Commented-out entries (e.g. genealogy) are
+skipped in all-repos mode but can be operated on if named explicitly.
+"""
+
+import argparse
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+DEFAULT_WORKDIR = Path.home() / "gdrive" / "work"
+
+# Topological order: sources before consumers. Order matters — consumers later
+# in the list see source repos already at their bumped tips (the precheck
+# fast-forwards every workdir to origin before any bumping starts).
+REPOS = [
+    # Sources first (no in-registry submodules).
+    {"name": "build-tools",           "owner": "ajay",     "branch": "main"},
+    {"name": "site-common",           "owner": "ajay",     "branch": "main"},
+    # Consumers.
+    {"name": "ajay.github.io",        "owner": "ajay",     "branch": "main"},
+    {"name": "dotfiles",              "owner": "ajay",     "branch": "master"},
+    # {"name": "genealogy",             "owner": "samantha", "branch": "main"},  # TODO: bump build-tools (see docs/TODO.md) before un-commenting
+    {"name": "site-hangsanfamily",    "owner": "samantha", "branch": "main"},
+    {"name": "site-saxenafamily",     "owner": "ajay",     "branch": "main"},
+    {"name": "site-srivastavafamily", "owner": "ajay",     "branch": "main"},
+    {"name": "travel",                "owner": "ajay",     "branch": "main"},
+]
+
+# Allow positional REPO args to target the commented-out entries too — the user
+# may want to set them up before un-commenting.
+_INACTIVE_REPOS = [
+    {"name": "genealogy", "owner": "samantha", "branch": "main"},
+]
+_REPO_BY_NAME = {r["name"]: r for r in REPOS + _INACTIVE_REPOS}
+
+
+@dataclass
+class RepoState:
+    name: str
+    owner: str
+    branch: str
+    path: Path
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.name}"
+
+    @property
+    def url(self) -> str:
+        return f"git@github.com:{self.slug}.git"
+
+
+def _run(cmd, cwd=None, check=True, capture=True):
+    kwargs = {"cwd": str(cwd) if cwd else None, "check": False, "text": True}
+    if capture:
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+    result = subprocess.run(cmd, **kwargs)
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"command failed ({result.returncode}): {' '.join(cmd)}\n"
+            f"  cwd: {cwd}\n  stderr: {(result.stderr or '').strip()}"
+        )
+    return (
+        result.returncode,
+        (result.stdout or "").strip(),
+        (result.stderr or "").strip(),
+    )
+
+
+def git(args, cwd, check=True, capture=True):
+    return _run(["git", *args], cwd=cwd, check=check, capture=capture)
+
+
+def _first_line(s: str) -> str:
+    return s.splitlines()[0] if s else ""
+
+
+def _confirm(prompt: str, default_no: bool = True) -> bool:
+    suffix = "[y/N]" if default_no else "[Y/n]"
+    try:
+        ans = input(f"{prompt} {suffix} ").strip().lower()
+    except EOFError:
+        return False
+    if not ans:
+        return not default_no
+    return ans in ("y", "yes")
+
+
+# ---------------------------------------------------------------------------
+# Common helpers
+# ---------------------------------------------------------------------------
+
+def find_drive_dupes(repo_path: Path) -> list:
+    """Recursively find Drive conflict copies, ignoring .git dirs."""
+    rc, out, _ = _run(
+        [
+            "find", str(repo_path),
+            "-type", "d", "-name", ".git", "-prune", "-o",
+            "(", "-name", "* (2)", "-o", "-name", "* (2).*", ")", "-type", "f", "-print",
+        ],
+        check=False,
+    )
+    if rc != 0 or not out:
+        return []
+    return [Path(line) for line in out.splitlines() if line]
+
+
+def find_real_content_edits(repo_path: Path) -> list:
+    """Walk repo + every nested submodule, return list of (sub_display, file_lines)
+    for any path with non-zero added/removed lines. Empty list means safe to
+    `git checkout -- .` across the tree (only mode/mtime drift)."""
+    bad = []
+    # `git submodule foreach --recursive --quiet 'echo $displaypath'` lists all
+    # nested submodules relative to the top-level. Prepend "." for the top.
+    rc, out, _ = git(
+        ["submodule", "foreach", "--recursive", "--quiet", "echo \"$displaypath\""],
+        cwd=repo_path, check=False,
+    )
+    sub_paths = ["."] + (out.splitlines() if rc == 0 and out else [])
+    for sub in sub_paths:
+        sub_dir = repo_path if sub == "." else repo_path / sub
+        if not (sub_dir / ".git").exists():
+            continue
+        _, numstat, _ = git(["diff", "--numstat"], cwd=sub_dir, check=False)
+        edits = [
+            line for line in numstat.splitlines()
+            if line and not (line.split("\t")[0] == "0" and line.split("\t")[1] == "0")
+        ]
+        if edits:
+            bad.append((sub, edits))
+    return bad
+
+
+def unpushed_commits(repo_path: Path, branch: str) -> Optional[str]:
+    """Return the oneline log of @{u}..HEAD if any, else None. None on no upstream too."""
+    rc, _, _ = git(
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+        cwd=repo_path, check=False,
+    )
+    if rc != 0:
+        return None
+    _, out, _ = git(
+        ["log", "--oneline", "@{u}..HEAD"], cwd=repo_path, check=False,
+    )
+    return out or None
+
+
+# ---------------------------------------------------------------------------
+# fix mode
+# ---------------------------------------------------------------------------
+
+def do_fix(state: RepoState, args) -> str:
+    """Returns one of: 'fixed', 'cloned', 'clean', 'refused', 'declined', 'error'."""
+    apply_ = args.apply
+    path = state.path
+
+    if not path.exists():
+        print(f"  not present — would clone from {state.url}")
+        if not apply_:
+            return "clean"
+        if not args.yes and not _confirm(f"  Clone {state.slug} into {path}?"):
+            print("  declined")
+            return "declined"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rc, _, err = _run(["git", "clone", state.url, str(path)], check=False)
+        if rc != 0:
+            print(f"  CLONE FAILED: {_first_line(err)}")
+            return "error"
+        # Cloning recurses --recursive? It doesn't by default. Initialize.
+        git(["submodule", "update", "--init", "--recursive"], cwd=path, check=False)
+        print("  cloned")
+        return "cloned"
+
+    if not (path / ".git").exists():
+        print(f"  EXISTS but is not a git repo: {path}")
+        return "error"
+
+    # Preflight: refuse if anything has real content edits.
+    bad = find_real_content_edits(path)
+    if bad:
+        print("  REFUSING — found real content edits (added/removed lines):")
+        for sub, lines in bad:
+            print(f"    {sub}:")
+            for line in lines:
+                print(f"      {line}")
+        print("  Review manually before re-running.")
+        return "refused"
+
+    dupes = find_drive_dupes(path)
+    if dupes:
+        print(f"  would delete {len(dupes)} Drive duplicate(s):")
+        for d in dupes:
+            print(f"    - {d.relative_to(path)}")
+    else:
+        print("  (no Drive duplicates)")
+
+    # Probe what would change from `git checkout -- .` across the tree.
+    rc_status, status, _ = git(["status", "--porcelain"], cwd=path, check=False)
+    if status:
+        print(f"  would restore {len(status.splitlines())} working-tree entr(y/ies) from index")
+    else:
+        print("  working tree already clean")
+
+    if not apply_:
+        return "clean" if not (dupes or status) else "fixed"
+
+    if not (dupes or status):
+        print("  nothing to do")
+        return "clean"
+
+    if not args.yes and not _confirm(f"  Fix {state.slug}?"):
+        print("  declined")
+        return "declined"
+
+    # Drop Drive dupes first (so `clean -fd` later, if added, wouldn't fight them).
+    if dupes:
+        for d in dupes:
+            d.unlink()
+        print(f"  deleted {len(dupes)} duplicate(s)")
+
+    # Refresh stat cache to cheaply clear phantom M entries before the heavy
+    # `checkout -- .`. Same primitive the v2 ad-hoc script used.
+    git(["update-index", "--refresh"], cwd=path, check=False)
+    git(
+        ["submodule", "foreach", "--recursive",
+         "git update-index --refresh >/dev/null 2>&1 || true"],
+        cwd=path, check=False,
+    )
+
+    git(
+        ["submodule", "foreach", "--recursive", "git checkout -- . 2>/dev/null || true"],
+        cwd=path, check=False, capture=False,
+    )
+    git(["checkout", "--", "."], cwd=path, check=False)
+    git(["submodule", "update", "--init", "--recursive"], cwd=path, check=False, capture=False)
+
+    _, final_status, _ = git(["status", "--porcelain"], cwd=path, check=False)
+    if final_status:
+        print("  final status (still dirty — review):")
+        for line in final_status.splitlines():
+            print(f"    {line}")
+        return "error"
+    print("  ✓ clean")
+    return "fixed"
+
+
+# ---------------------------------------------------------------------------
+# reclone mode
+# ---------------------------------------------------------------------------
+
+def do_reclone(state: RepoState, args) -> str:
+    """Returns one of: 'reclone', 'cloned', 'refused', 'declined', 'error'."""
+    apply_ = args.apply
+    path = state.path
+
+    # Warn about unpushed commits BEFORE the destroy decision.
+    warning = None
+    if path.exists() and (path / ".git").exists():
+        unpushed = unpushed_commits(path, state.branch)
+        if unpushed:
+            warning = unpushed
+
+    if warning:
+        print("  ⚠  UNPUSHED COMMITS would be lost on reclone:")
+        for line in warning.splitlines():
+            print(f"      {line}")
+
+    if not path.exists():
+        print(f"  not present — would clone fresh from {state.url}")
+        if not apply_:
+            return "clean"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rc, _, err = _run(["git", "clone", state.url, str(path)], check=False)
+        if rc != 0:
+            print(f"  CLONE FAILED: {_first_line(err)}")
+            return "error"
+        git(["submodule", "update", "--init", "--recursive"], cwd=path, check=False)
+        print("  ✓ cloned")
+        return "cloned"
+
+    print(f"  would: rm -rf {path} && git clone {state.url} {path}")
+    if not apply_:
+        return "clean"
+
+    if warning and args.yes:
+        print("  SKIPPED — --yes will not silently discard unpushed commits.")
+        print("  Push them first, or run interactively (without --yes) to confirm.")
+        return "refused"
+
+    if not args.yes:
+        prompt = f"  Reclone {state.slug}? (DESTROYS LOCAL CHECKOUT)"
+        if not _confirm(prompt):
+            print("  declined")
+            return "declined"
+
+    shutil.rmtree(path)
+    rc, _, err = _run(["git", "clone", state.url, str(path)], check=False)
+    if rc != 0:
+        print(f"  CLONE FAILED: {_first_line(err)}")
+        return "error"
+    git(["submodule", "update", "--init", "--recursive"], cwd=path, check=False)
+    print("  ✓ recloned")
+    return "reclone"
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+def resolve_repos(names: list, workdir: Path) -> list:
+    """If names is empty, return all active REPOS. Otherwise resolve each name
+    (may include inactive entries explicitly), erroring on unknown names."""
+    if not names:
+        entries = REPOS
+    else:
+        unknown = [n for n in names if n not in _REPO_BY_NAME]
+        if unknown:
+            sys.exit(f"error: unknown repo name(s): {', '.join(unknown)}")
+        entries = [_REPO_BY_NAME[n] for n in names]
+    return [
+        RepoState(
+            name=e["name"], owner=e["owner"], branch=e["branch"],
+            path=workdir / e["name"],
+        )
+        for e in entries
+    ]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--apply", action="store_true",
+        help="Actually mutate. Without this flag, runs in dry-run mode: prints "
+             "what would happen per repo and exits without changing anything.",
+    )
+    ap.add_argument(
+        "--reclone", action="store_true",
+        help="NUCLEAR: `rm -rf <repo>` then `git clone` for each selected repo. "
+             "Asks per-repo [y/N] confirm unless --yes. Reclone of a repo with "
+             "unpushed commits is SKIPPED even with --yes.",
+    )
+    ap.add_argument(
+        "--yes", action="store_true",
+        help="Skip per-repo [y/N] confirmation prompts. Does NOT override the "
+             "unpushed-commits guard in --reclone mode.",
+    )
+    ap.add_argument(
+        "--workdir", type=Path, default=DEFAULT_WORKDIR,
+        help=f"Override default {DEFAULT_WORKDIR}.",
+    )
+    ap.add_argument(
+        "repos", nargs="*", metavar="REPO",
+        help="Operate on only these repo names (default: all active REPOS). "
+             "Names must match the 'name' field. Inactive (commented-out) "
+             "entries can be operated on if named explicitly.",
+    )
+    args = ap.parse_args()
+
+    if not args.apply:
+        print("DRY RUN — no mutations. Re-run with --apply to actually fix/reclone.\n")
+
+    states = resolve_repos(args.repos, args.workdir)
+    width = max(len(s.slug) for s in states)
+    mode_label = "RECLONE" if args.reclone else "FIX"
+
+    print(f"=== {mode_label} ===")
+    counts = {}
+    for state in states:
+        print(f"===== {state.slug:<{width}}  ({state.path}) =====")
+        try:
+            if args.reclone:
+                outcome = do_reclone(state, args)
+            else:
+                outcome = do_fix(state, args)
+        except Exception as e:
+            print(f"  EXCEPTION: {e}")
+            outcome = "error"
+        counts[outcome] = counts.get(outcome, 0) + 1
+        print()
+
+    print("=== Summary ===")
+    if not counts:
+        print("(no repos processed)")
+        return 0
+    parts = [f"{n} {k}" for k, n in sorted(counts.items())]
+    print(", ".join(parts))
+
+    # Non-zero exit on any error/refusal so scripts can detect.
+    bad = counts.get("error", 0) + counts.get("refused", 0)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
