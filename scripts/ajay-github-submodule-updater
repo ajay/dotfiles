@@ -24,13 +24,17 @@ DEFAULT_WORKDIR = Path.home() / "gdrive" / "work"
 # in the list see source repos already at their bumped tips (the precheck
 # fast-forwards every workdir to origin before any bumping starts).
 REPOS = [
-    {"name": "build-tools",           "owner": "ajay", "branch": "main"},
-    {"name": "site-common",           "owner": "ajay", "branch": "main"},
-    {"name": "ajay.github.io",        "owner": "ajay", "branch": "main"},
-    {"name": "dotfiles",              "owner": "ajay", "branch": "master"},
-    {"name": "site-hangsanfamily",    "owner": "ajay", "branch": "main"},
-    {"name": "site-saxenafamily",     "owner": "ajay", "branch": "main"},
-    {"name": "site-srivastavafamily", "owner": "ajay", "branch": "main"},
+    # Sources first (no in-registry submodules).
+    {"name": "build-tools",           "owner": "ajay",     "branch": "main"},
+    {"name": "site-common",           "owner": "ajay",     "branch": "main"},
+    # Consumers.
+    {"name": "ajay.github.io",        "owner": "ajay",     "branch": "main"},
+    {"name": "dotfiles",              "owner": "ajay",     "branch": "master"},
+    # {"name": "genealogy",             "owner": "samantha", "branch": "main"},  # TODO: bump build-tools (see docs/TODO.md) before un-commenting
+    {"name": "site-hangsanfamily",    "owner": "samantha", "branch": "main"},
+    {"name": "site-saxenafamily",     "owner": "ajay",     "branch": "main"},
+    {"name": "site-srivastavafamily", "owner": "ajay",     "branch": "main"},
+    {"name": "travel",                "owner": "ajay",     "branch": "main"},
 ]
 
 # Same regex as ajay-github-repo-manager — extracts owner/name from a clone URL.

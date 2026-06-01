@@ -26,15 +26,26 @@ except ImportError:
 
 ################################################################################
 
-REPOS = sorted([
-    "ajay/ajay.github.io",
-    "ajay/build-tools",
-    "ajay/dotfiles",
-    "ajay/site-common",
-    "ajay/site-hangsanfamily",
-    "ajay/site-saxenafamily",
-    "ajay/site-srivastavafamily",
-])
+# Topological order: sources before consumers. Order matters — consumers later
+# in the list see source repos already at their bumped tips (the precheck
+# fast-forwards every workdir to origin before any bumping starts).
+REPOS = [
+    # Sources first (no in-registry submodules).
+    {"name": "build-tools",           "owner": "ajay",     "branch": "main"},
+    {"name": "site-common",           "owner": "ajay",     "branch": "main"},
+    # Consumers.
+    {"name": "ajay.github.io",        "owner": "ajay",     "branch": "main"},
+    {"name": "dotfiles",              "owner": "ajay",     "branch": "master"},
+    # {"name": "genealogy",             "owner": "samantha", "branch": "main"},  # TODO: bump build-tools (see docs/TODO.md) before un-commenting
+    {"name": "site-hangsanfamily",    "owner": "samantha", "branch": "main"},
+    {"name": "site-saxenafamily",     "owner": "ajay",     "branch": "main"},
+    {"name": "site-srivastavafamily", "owner": "ajay",     "branch": "main"},
+    {"name": "travel",                "owner": "ajay",     "branch": "main"},
+]
+
+# Projections used throughout the rest of the script.
+_REPO_SLUGS = [f"{r['owner']}/{r['name']}" for r in REPOS]
+_REPO_BRANCHES = {f"{r['owner']}/{r['name']}": r["branch"] for r in REPOS}
 
 ################################################################################
 # Data layer — GitHub API with caching
@@ -94,26 +105,42 @@ def gh_api(endpoint):
         return data
 
 
-def get_head_info(repo):
-    """Get HEAD SHA, commit date, and branch. Returns (sha, date_str, branch) or (None, None, None)."""
-    branch = "main"
-    data = gh_api(f"repos/{repo}/commits/main")
-    if not data or "sha" not in data:
-        branch = "master"
-        data = gh_api(f"repos/{repo}/commits/master")
-    if data and "sha" in data:
-        sha = data["sha"]
-        date_raw = data.get("commit", {}).get("committer", {}).get("date", "")
-        date_str = date_raw.replace("T", " ")[:16] if date_raw else ""
-        return sha, date_str, branch
+def get_head_info(repo, branch=None):
+    """Get HEAD SHA, commit date, and branch. Returns (sha, date_str, branch) or (None, None, None).
+
+    If `branch` is provided, try it first and skip the main/master probe. For
+    repos not in the registry (external submodule deps), the caller omits it
+    and we fall back to main → master.
+    """
+    candidates = []
+    if branch:
+        candidates.append(branch)
+    for b in ("main", "master"):
+        if b not in candidates:
+            candidates.append(b)
+    for b in candidates:
+        data = gh_api(f"repos/{repo}/commits/{b}")
+        if data and "sha" in data:
+            sha = data["sha"]
+            date_raw = data.get("commit", {}).get("committer", {}).get("date", "")
+            date_str = date_raw.replace("T", " ")[:16] if date_raw else ""
+            return sha, date_str, b
     return None, None, None
 
 
-def get_ci_runs(repo):
+def get_ci_runs(repo, branch=None):
     """Get latest CI runs grouped by workflow name."""
-    data = gh_api(f"repos/{repo}/actions/runs?per_page=20&branch=main")
-    if not data or not data.get("workflow_runs"):
-        data = gh_api(f"repos/{repo}/actions/runs?per_page=20&branch=master")
+    candidates = []
+    if branch:
+        candidates.append(branch)
+    for b in ("main", "master"):
+        if b not in candidates:
+            candidates.append(b)
+    data = None
+    for b in candidates:
+        data = gh_api(f"repos/{repo}/actions/runs?per_page=20&branch={b}")
+        if data and data.get("workflow_runs"):
+            break
     if not data or not data.get("workflow_runs"):
         return []
     seen = {}
@@ -529,7 +556,7 @@ class RepoStatusApp(App):
         self._spinner_timer = None
 
         tree = self.query_one("#repo-tree", RepoTree)
-        for repo in REPOS:
+        for repo in _REPO_SLUGS:
             owner, name = repo.split("/")
             label = repo_label(owner, name)
             node = tree.root.add(label, data={"repo": repo}, expand=False)
@@ -685,7 +712,7 @@ class RepoStatusApp(App):
 
     def _sorted_repos(self):
         """Return REPOS in current sort order."""
-        repos = list(REPOS)
+        repos = list(_REPO_SLUGS)
         repos.sort(
             key=lambda r: self._sort_value(r, self._sort_key),
             reverse=not self._sort_ascending,
@@ -746,7 +773,7 @@ class RepoStatusApp(App):
         self.call_from_thread(self._set_loading, True)
         _get_token()
         t_start = time.monotonic()
-        total = len(REPOS)
+        total = len(_REPO_SLUGS)
         stop = self._stop
 
         def stopped():
@@ -764,10 +791,12 @@ class RepoStatusApp(App):
 
         with ThreadPoolExecutor(max_workers=12) as pool:
             head_futures = {
-                pool.submit(get_head_info, r): ("head", r) for r in REPOS
+                pool.submit(get_head_info, r, _REPO_BRANCHES.get(r)): ("head", r)
+                for r in _REPO_SLUGS
             }
             ci_futures = {
-                pool.submit(get_ci_runs, r): ("ci", r) for r in REPOS
+                pool.submit(get_ci_runs, r, _REPO_BRANCHES.get(r)): ("ci", r)
+                for r in _REPO_SLUGS
             }
             all_futures = {**head_futures, **ci_futures}
             done = 0
@@ -804,14 +833,14 @@ class RepoStatusApp(App):
 
         # Phase 2: Submodule discovery (BFS, parallel at each depth level)
         update_status("Fetching submodules…")
-        repo_refs = [(repo, sha_cache.get(repo)) for repo in REPOS]
+        repo_refs = [(repo, sha_cache.get(repo)) for repo in _REPO_SLUGS]
         submodule_cache = collect_submodules_bfs(repo_refs)
 
         if stopped():
             return
 
         # Update all repo nodes with submodule data
-        for repo in REPOS:
+        for repo in _REPO_SLUGS:
             subs = submodule_cache.get(repo, [])
             self.call_from_thread(
                 self._update_repo_node,
@@ -828,7 +857,7 @@ class RepoStatusApp(App):
         # Phase 3: External repo HEADs — re-update affected nodes as they arrive
         external_repos = set()
         external_to_repos = {}
-        for repo in REPOS:
+        for repo in _REPO_SLUGS:
             for sub in submodule_cache.get(repo, []):
                 if sub["owner_repo"] and sub["owner_repo"] not in sha_cache:
                     external_repos.add(sub["owner_repo"])
