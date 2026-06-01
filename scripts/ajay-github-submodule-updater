@@ -108,7 +108,7 @@ def precheck_repo(state: RepoState, args) -> bool:
     path = state.path
 
     if not path.exists():
-        if args.dry_run:
+        if not args.apply:
             state.error = f"MISSING (would prompt to clone into {path})"
             return False
         consent = args.yes or _confirm_clone(state.slug, path)
@@ -227,7 +227,7 @@ def bump_repo(consumer: RepoState, by_name: dict, args) -> list:
         latest = source.head
         if pinned == latest:
             continue
-        if args.dry_run:
+        if not args.apply:
             bumps.append((sub_name, _short(pinned), _short(latest), "DRYRUN"))
             continue
         sub_full = consumer.path / sub_path
@@ -253,7 +253,7 @@ def bump_repo(consumer: RepoState, by_name: dict, args) -> list:
     # post-bump tip, not the pre-bump tip. Update the in-memory source HEAD so
     # later iterations of the bump loop compare against the right value.
     if bumps:
-        if args.dry_run:
+        if not args.apply:
             consumer.head = f"<post-{consumer.name}-bump>"
         else:
             _, new_head, _ = git(["rev-parse", "HEAD"], cwd=consumer.path)
@@ -270,12 +270,15 @@ def main() -> int:
         "--message", help="Override commit message for ALL bump commits this run.",
     )
     ap.add_argument(
-        "--no-push", action="store_true",
-        help="Skip the per-repo `git push` after that repo's bumps.",
+        "--apply", action="store_true",
+        help="Actually commit (and push, unless --no-push) the bumps. Without "
+             "this flag, the script runs in dry-run mode: prints intended bumps, "
+             "makes no commits and no clone prompts.",
     )
     ap.add_argument(
-        "--dry-run", action="store_true",
-        help="Print intended bumps; make no commits, no clone prompts. Implies --no-push.",
+        "--no-push", action="store_true",
+        help="Skip the per-repo `git push` after that repo's bumps. Only "
+             "meaningful with --apply.",
     )
     ap.add_argument(
         "--workdir", type=Path, default=DEFAULT_WORKDIR,
@@ -286,8 +289,9 @@ def main() -> int:
         help="Auto-confirm clone prompts for missing repos.",
     )
     args = ap.parse_args()
-    if args.dry_run:
+    if not args.apply:
         args.no_push = True
+        print("DRY RUN — no mutations. Re-run with --apply to commit/push.\n")
 
     states = [
         RepoState(
@@ -342,7 +346,7 @@ def main() -> int:
             print(f"  {slug_col:<{width}}  {sub_name}: {old} → {new}   {tag}")
 
         if args.no_push:
-            note = "skip push (--dry-run)" if args.dry_run else "skip push (--no-push)"
+            note = "skip push (dry-run)" if not args.apply else "skip push (--no-push)"
             print(f"  {'':<{width}}  ↳ {note}")
             continue
 
@@ -374,7 +378,7 @@ def main() -> int:
         return 1
 
     if args.no_push:
-        scope = "dry-run" if args.dry_run else "no push"
+        scope = "dry-run" if not args.apply else "no push"
         print(f"{total_bumps} bump commit(s) across {bumped_repos} repo(s) ({scope}).")
     else:
         print(
