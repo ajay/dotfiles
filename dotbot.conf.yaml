@@ -205,8 +205,14 @@
         - "=> shell-wallpaper: picture-uri"
       - - gsettings set org.gnome.desktop.background picture-uri-dark "file://$PWD/dotfiles/wallpaper/flowers.jpg"
         - "=> shell-wallpaper: picture-uri-dark"
+  - if: 'test "$(hostnamectl chassis)" = "desktop"'
+    shell:
       - - gsettings set org.gnome.desktop.background picture-options 'spanned'
-        - "=> shell-wallpaper: picture-options spanned"
+        - "=> shell-wallpaper: picture-options spanned (desktop)"
+  - if: 'test "$(hostnamectl chassis)" != "desktop"'
+    shell:
+      - - gsettings set org.gnome.desktop.background picture-options 'zoom'
+        - "=> shell-wallpaper: picture-options zoom (non-desktop)"
 
 - shell-meta-chef:
   - shell:
