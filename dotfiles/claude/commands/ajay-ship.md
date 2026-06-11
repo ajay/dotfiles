@@ -18,7 +18,33 @@ Generate a `/tmp` shell script that will stage, commit, and (for git) push the u
 
 3. **Identify the intended files for this commit.** Default to every modified/added/deleted/untracked path. If the diff contains files that look unrelated to the dominant theme of the change (e.g. a stray edit in an unrelated subtree, or untracked scratch files), ask the user via `AskUserQuestion` which group(s) to include before continuing. Any file that's dirty in the working tree but NOT going into this commit must be listed under "Files NOT staged" in the script header so the user can spot drift.
 
-4. **Draft a commit message** that matches the repo's recent style. Read the last ~20 commits and copy the convention you see — for example, the dotfiles repo uses `<scope>: <short subject>` with an optional bulleted body explaining the *why* (not the *what*). Don't invent a style. The subject should be short (≤72 chars); the body is optional and used only when the change has non-obvious motivation worth recording. For large repos (such as a monorepo), inspect current changes in the relevant project or current directory; it will not be useful to look at overall last ~20 commits.
+4. **Draft a commit message** that matches the repo's recent style. Read the last ~20 commits and copy the convention you see — for example, the dotfiles repo uses `<scope>: <short subject>` with an optional bulleted body explaining the *why* (not the *what*). Don't invent a style. The subject should be short (≤72 chars); the body is optional and used only when the change has non-obvious motivation worth recording. For large repos (such as a monorepo), inspect current changes in the relevant project or current directory; it will not be useful to look at overall last ~20 commits. Always use lowercase for the first word after the scope prefix — e.g. `[nrf54h20] add ...` not `[nrf54h20] Add ...`, `dotfiles: fish: add ...` not `dotfiles: fish: Add ...`.
+
+   For repos that use a Test Plan field (e.g. fbsource/Phabricator), populate it with a minimal fenced code block listing the relevant commands (existing and new) that a reviewer can copy-paste to reproduce. No prose — just the commands. After the commands block, add a blank output block for the user to paste results into, with a tiny note like `<output of: `command`>`. If you can predict what the output will be, prepopulate it as expected output (clearly marked as "expected", not actual). If the change modifies behavior of an existing command, use before/after sections. Example:
+
+   ```
+   echo 'hello_world'
+   ```
+
+   before:
+   ```
+   <output of: `echo 'hello_world'` before>
+   ```
+
+   after:
+   ```
+   <output of: `echo 'hello_world'` after>
+   ```
+
+   For new commands with no "before", just use a single output block:
+
+   ```
+   make test TARGET=myapp
+   ```
+
+   ```
+   <output of: `make test TARGET=myapp`>
+   ```
 
 5. **Write the script** to `/tmp/ship-<repo-basename>-<theme>-<YYYYMMDD-HHMMSS>.sh` using the template below, then `chmod +x` it.
 
