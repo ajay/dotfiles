@@ -43,11 +43,11 @@
 - shell-dnf-update:
   - if: 'test -d /opt/facebook'
     shell:
-      - - sudo -v && sudo dnf -y up-no-meta --disablerepo=zoom
+      - - sudo -v && sudo dnf -y up-no-meta --refresh --disablerepo=zoom
         - "=> shell-dnf-update: Update (Meta)"
   - if: 'test ! -d /opt/facebook'
     shell:
-      - - sudo -v && sudo dnf -y update
+      - - sudo -v && sudo dnf -y update --refresh
         - "=> shell-dnf-update: Update"
 
 - shell-dnf:
