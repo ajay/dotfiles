@@ -1,10 +1,20 @@
 {
   "env": {
-    "BUCK2_TEST_DISABLE_DAEMON_CGROUP": "true"
+    "BUCK2_TEST_DISABLE_DAEMON_CGROUP": "true",
+    "DISABLE_AUTOUPDATER": "1"
   },
   "model": "opus[1m]",
   "effortLevel": "xhigh",
   "fastMode": true,
+  "skipWorkflowUsageWarning": true,
+  "extraKnownMarketplaces": {
+    "agent-market": {
+      "source": {
+        "source": "directory",
+        "path": "/home/ajaysriv/.claude/agent-market"
+      }
+    }
+  },
   "permissions": {
     "allowedUsbDevices": [
       {"vid": "1366", "pid": "*"},
