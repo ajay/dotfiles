@@ -3,23 +3,7 @@
     "BUCK2_TEST_DISABLE_DAEMON_CGROUP": "true",
     "DISABLE_AUTOUPDATER": "1"
   },
-  "model": "opus[1m]",
-  "effortLevel": "xhigh",
-  "fastMode": true,
-  "skipWorkflowUsageWarning": true,
-  "extraKnownMarketplaces": {
-    "agent-market": {
-      "source": {
-        "source": "directory",
-        "path": "/home/ajaysriv/.claude/agent-market"
-      }
-    }
-  },
   "permissions": {
-    "allowedUsbDevices": [
-      {"vid": "1366", "pid": "*"},
-      {"vid": "0403", "pid": "6015"}
-    ],
     "allow": [
       "Bash(arc browse:*)",
       "Bash(arc diff-details:*)",
@@ -75,6 +59,9 @@
       "WebSearch",
       "Write"
     ],
+    "deny": [
+      "Bash(jf sync:*)"
+    ],
     "ask": [
       "Bash(cp:*)",
       "Bash(curl:*)",
@@ -98,6 +85,31 @@
       "Bash(sudo:*)",
       "Bash(wget:*)"
     ],
-    "deny": ["Bash(jf sync:*)"]
-  }
+    "allowedUsbDevices": [
+      {
+        "vid": "1366",
+        "pid": "*"
+      },
+      {
+        "vid": "0403",
+        "pid": "6015"
+      }
+    ]
+  },
+  "model": "opus[1m]",
+  "enabledPlugins": {
+    "meta_knowledge_v3@agent-market": false,
+    "meta-trajectory@agent-market": false
+  },
+  "extraKnownMarketplaces": {
+    "agent-market": {
+      "source": {
+        "source": "directory",
+        "path": "/home/ajaysriv/.claude/agent-market"
+      }
+    }
+  },
+  "effortLevel": "xhigh",
+  "fastMode": true,
+  "skipWorkflowUsageWarning": true
 }
