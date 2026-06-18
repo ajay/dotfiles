@@ -99,7 +99,12 @@
   "model": "opus[1m]",
   "enabledPlugins": {
     "meta_knowledge_v3@agent-market": false,
-    "meta-trajectory@agent-market": false
+    "meta-trajectory@agent-market": false,
+    "meta@agent-market": true,
+    "diff-shuttle@agent-market": true,
+    "meta_codesearch@agent-market": true,
+    "meta-cli-core@agent-market": true,
+    "sl@agent-market": true
   },
   "extraKnownMarketplaces": {
     "agent-market": {
