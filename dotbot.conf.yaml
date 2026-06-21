@@ -86,6 +86,12 @@
       - - sudo -v && yes | sudo remove-retired-packages
         - "=> shell-dnf: remove-retired-packages"
 
+- shell-nvidia:
+  - if: 'lspci -d 10de:: -nn | grep -Eiq "VGA compatible|3D controller"'
+    shell:
+      - - sudo -v && sudo dnf -y config-manager setopt rpmfusion-nonfree-nvidia-driver.enabled=1 && sudo dnf -y install akmod-nvidia xorg-x11-drv-nvidia-cuda
+        - "=> shell-nvidia: install NVIDIA driver (reboot afterwards)"
+
 - shell-insync:
   - shell:
       - - sudo -v && sudo rpm --import https://d2t3ff60b2tol4.cloudfront.net/repomd.xml.key

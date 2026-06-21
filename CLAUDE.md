@@ -35,6 +35,7 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
 - `shell-dnf-update` — `dnf update` (Meta-aware: uses `up-no-meta` on Meta machines)
 - `shell-dnf` — install Fedora packages
+- `shell-nvidia` — install the NVIDIA driver (akmod-nvidia + CUDA) on machines with an NVIDIA GPU; no-op otherwise
 - `shell-insync` — install Insync (Google Drive sync)
 - `shell-pip` — install Python packages from `scripts/requirements.txt`
 - `shell-gnome-extensions` — install GNOME extensions (V-Shell, Tactile, Caffeine, Vitals)
