@@ -4,3 +4,7 @@
 [submodule "tools/build-tools"]
 	path = tools/build-tools
 	url = git@github.com:ajay/build-tools.git
+[submodule "private"]
+	path = private
+	url = git@github.com:ajay/dotfiles-private.git
+	branch = main

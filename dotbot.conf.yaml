@@ -22,18 +22,26 @@
     - '~'
     - '~/.config/fish'
     - '~/.local/bin'
+    - '~/.claude/projects/-home-ajaysriv'
+    - '~/.claude/projects/-home-ajaysriv--dotfiles'
+    - '~/.claude/projects/-home-ajaysriv-fbsource'
 
 - link:
     ~/.config/fish/config.fish: dotfiles/fish/config.fish
     ~/.config/fish/functions: dotfiles/fish/functions/
     ~/.claude/commands: dotfiles/claude/commands/
     ~/.claude/settings.json: dotfiles/claude/settings.json
+    ~/.claude/settings.local.json: private/dotfiles/claude/settings.local.json
+    ~/.claude/projects/-home-ajaysriv/memory: private/dotfiles/claude/projects/home/memory/
+    ~/.claude/projects/-home-ajaysriv--dotfiles/memory: private/dotfiles/claude/projects/dotfiles/memory/
+    ~/.claude/projects/-home-ajaysriv-fbsource/memory: private/dotfiles/claude/projects/fbsource/memory/
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc
     ~/.local/bin/ajay-github-repo-manager: scripts/ajay-github-repo-manager
     ~/.local/bin/ajay-github-repo-updater: scripts/ajay-github-repo-updater
     ~/.local/bin/ajay-github-submodule-updater: scripts/ajay-github-submodule-updater
+    ~/.local/bin/ajay-claude-memory-sync: scripts/ajay-claude-memory-sync
     ~/.local/bin/ajay-workspace-setup: scripts/ajay-workspace-setup
 
 - shell-build-tools-deps:

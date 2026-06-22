@@ -53,15 +53,14 @@
       "Bash(where:*)",
       "Bash(which:*)",
       "Bash(xxd:*)",
+      "mcp__plugin_meta_mux__external_web_search3pai",
       "LS",
       "Read",
       "WebFetch(domain:*)",
       "WebSearch",
       "Write"
     ],
-    "deny": [
-      "Bash(jf sync:*)"
-    ],
+    "deny": ["Bash(jf sync:*)"],
     "ask": [
       "Bash(cp:*)",
       "Bash(curl:*)",

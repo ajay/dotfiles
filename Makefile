@@ -13,7 +13,7 @@ git-submodule-update:
 	git submodule update --init --recursive
 
 ifneq ($(filter git-submodule-update install,$(MAKECMDGOALS)),)
-else ifneq (,$(shell git submodule status --recursive 2>/dev/null | grep '^[-+]'))
+else ifneq (,$(shell git submodule status --recursive 2>/dev/null | grep '^[-+]' | grep -vw 'private'))
 $(error ERROR: git submodules not initialized or out of date; run `make git-submodule-update`)
 endif
 
@@ -25,7 +25,7 @@ endif
 
 DEPS += python3
 
-GIT_SUBMODULE_STALE_CHECK_EXCLUDE := pyyaml
+GIT_SUBMODULE_STALE_CHECK_EXCLUDE := pyyaml private
 
 DOTBOT_BIN           := dotbot/dotbot/bin/dotbot
 DOTBOT_CONFIG        := dotbot.conf.yaml
