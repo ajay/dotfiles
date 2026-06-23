@@ -60,7 +60,9 @@
       "WebSearch",
       "Write"
     ],
-    "deny": ["Bash(jf sync:*)"],
+    "deny": [
+      "Bash(jf sync:*)"
+    ],
     "ask": [
       "Bash(cp:*)",
       "Bash(curl:*)",

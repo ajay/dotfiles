@@ -9,3 +9,5 @@ on:
 jobs:
   make-ci:
     uses: ajay/build-tools/.github/workflows/make-ci.yml@main
+    with:
+      submodule-checkout-opt-out: private
