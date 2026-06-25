@@ -56,7 +56,7 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 
 ## Dotfiles Layout
 
-Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. `dotfiles/claude/settings.json` is symlinked to `~/.claude/settings.json` (the user-layer settings for Claude Code). `dotfiles/claude/commands/` is symlinked to `~/.claude/commands/` and contains custom slash commands (ajay-flockboss, ajay-inspect-commit, ajay-ship).
+Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. `dotfiles/claude/settings.json` is symlinked to `~/.claude/settings.json` (the user-layer settings for Claude Code). `dotfiles/claude/commands/` is symlinked to `~/.claude/commands/` and contains custom slash commands: `ajay-init` (read-only session bootstrap), `ajay-inspect-commit` (inspect the current commit/stack), `ajay-ship` (generate a stage/commit/push script), `ajay-handoff` (write cross-machine handoff docs into `.session-handoff/`), `ajay-resume` (resume work from those handoff docs on another machine), and `ajay-flockboss` (flockboss project pointer).
 
 ## Identity split: git vs hg
 
