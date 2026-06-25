@@ -41,7 +41,7 @@
     ~/.local/bin/ajay-github-repo-manager: scripts/ajay-github-repo-manager
     ~/.local/bin/ajay-github-repo-updater: scripts/ajay-github-repo-updater
     ~/.local/bin/ajay-github-submodule-updater: scripts/ajay-github-submodule-updater
-    ~/.local/bin/ajay-claude-memory-sync: scripts/ajay-claude-memory-sync
+    ~/.local/bin/ajay-dotfiles-private-sync: scripts/ajay-dotfiles-private-sync
     ~/.local/bin/ajay-workspace-setup: scripts/ajay-workspace-setup
 
 - shell-build-tools-deps:
