@@ -47,6 +47,7 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-timezone` — set timezone to America/Los_Angeles
 - `shell-wallpaper` — set desktop wallpaper
 - `shell-meta-chef` — run Meta chef (soloctl)
+- `shell-meta-eden` — on Meta machines, clear the `fedora_eden.service` (EdenFS) failed state so GNOME stops showing its "Application Stopped" notification; no-op elsewhere
 
 Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef targets).
 

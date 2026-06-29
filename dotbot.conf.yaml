@@ -230,3 +230,9 @@
   - shell:
       - - sudo -v && sudo soloctl -Hic && sudo -v && sudo soloctl -Hic
         - "=> shell-meta-chef: mr. chef"
+
+- shell-meta-eden:
+  - if: 'test -d /opt/facebook'
+    shell:
+      - - systemctl --user reset-failed fedora_eden.service
+        - "=> shell-meta-eden: clear EdenFS failed state (suppress 'Application Stopped' notification)"
