@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Consolidate Claude Code's accepted permissions from settings.local.json into settings.json.
+
+Claude Code appends permissions you accept mid-session to ~/.claude/settings.local.json
+(a symlink into the private dotfiles submodule). This helper moves them up into the
+synced settings.json so they persist and propagate across machines, then resets
+settings.local.json to its empty canary ({}).
+
+It also keeps settings.json tidy: validates it as JSON and rewrites it canonically with
+every object key and permission list alphabetized (Claude writes in insertion order,
+which drifts and creates cross-machine merge noise).
+
+Dry-run by default -- prints what it would change and touches nothing; pass --apply to
+write. Does not git-commit/push or run dotbot; ship separately with /ajay-ship.
+
+Merge is per permissions category, exact-string, deduped:
+  allow / deny / ask   union of strings
+  allowedUsbDevices    union of {vid,pid} objects
+Cross-category collisions (same exact string in >1 category) are resolved after merge:
+  promote over ask     a pattern in allow is dropped from ask (ask shadows allow in
+                       precedence, so an accepted perm must not linger in ask)
+  warn on deny         a pattern in both allow and deny is left as-is and flagged
+                       (deny wins; never silently un-deny)
+Glob/semantic overlaps (e.g. Bash(git:*) vs Bash(git commit:*)) are NOT detected.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import os
+import sys
+from pathlib import Path
+
+# ─── config (see module docstring) ──────────────────────────────────────────────
+CLAUDE_DIR = Path.home() / ".dotfiles" / "private" / "dotfiles" / "claude"
+SETTINGS = CLAUDE_DIR / "settings.json"
+LOCAL = CLAUDE_DIR / "settings.local.json"
+
+STRING_LISTS = ("allow", "deny", "ask")  # permission categories that are string arrays
+OBJECT_LISTS = ("allowedUsbDevices",)  # permission categories that are object arrays
+PERMISSION_KEYS = STRING_LISTS + OBJECT_LISTS
+EMPTY = "{}"
+LOCAL_CANARY = EMPTY + "\n"  # reset state for settings.local.json
+
+
+def die(msg):
+    print(f"ERROR: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def section(title):
+    print(f"=== {title} ===")
+
+
+def load_obj(path):
+    """Read + parse a JSON object, dying with a clear message on any problem."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        die(f"missing file: {path}")
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        die(f"{path} is not valid JSON: {e}")
+    if not isinstance(obj, dict):
+        die(f"{path} is not a JSON object")
+    return text, obj
+
+
+def dumps(obj):
+    """Serialize in Claude's native style (2-space) with every object key alphabetized."""
+    return json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
+def usb_sort_key(dev):
+    return (str(dev.get("vid", "")), str(dev.get("pid", "")), json.dumps(dev, sort_keys=True))
+
+
+def atomic_write(path, text):
+    json.loads(text)  # defensive: never leave invalid JSON on disk
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write the changes. Without it the script runs dry: report only, touch nothing.",
+    )
+    args = ap.parse_args()
+
+    settings_text, settings = load_obj(SETTINGS)
+    local_text, local = load_obj(LOCAL)
+
+    # --- guard: only 'permissions' is understood in the local file ---
+    extra_top = sorted(k for k in local if k != "permissions")
+    if extra_top:
+        die(
+            f"{LOCAL.name} has unexpected top-level key(s) {extra_top}; this helper only "
+            "moves 'permissions'. Handle them by hand, then re-run."
+        )
+    local_perms = local.get("permissions") or {}
+    if not isinstance(local_perms, dict):
+        die(f"{LOCAL.name} 'permissions' is not an object")
+    extra_cat = sorted(k for k in local_perms if k not in PERMISSION_KEYS)
+    if extra_cat:
+        die(
+            f"{LOCAL.name} permissions has unknown categor(y/ies) {extra_cat}; "
+            f"known: {list(PERMISSION_KEYS)}. Handle them by hand, then re-run."
+        )
+
+    perms = settings.setdefault("permissions", {})
+    if not isinstance(perms, dict):
+        die(f"{SETTINGS.name} 'permissions' is not an object")
+
+    moved = {}  # category -> list of items newly promoted from local (for the report)
+
+    # --- merge string categories (union + dedup + sort) ---
+    for cat in STRING_LISTS:
+        additions = list(local_perms.get(cat, []))
+        existing = list(perms.get(cat, []))
+        if additions:
+            existing_set = set(existing)
+            new = [x for x in additions if x not in existing_set]
+            if new:
+                moved[cat] = new
+            perms[cat] = sorted(existing_set | set(additions))
+        elif cat in perms:
+            perms[cat] = sorted(set(existing))  # canonicalize even with nothing to move
+
+    # --- merge object categories (dedup by full value, sort by (vid,pid)) ---
+    for cat in OBJECT_LISTS:
+        additions = list(local_perms.get(cat, []))
+        existing = list(perms.get(cat, [])) if cat in perms else []
+        if additions or existing:
+            by_val = {json.dumps(d, sort_keys=True): d for d in existing}
+            new = []
+            for d in additions:
+                key = json.dumps(d, sort_keys=True)
+                if key not in by_val:
+                    by_val[key] = d
+                    new.append(d)
+            if new:
+                moved[cat] = new
+            perms[cat] = sorted(by_val.values(), key=usb_sort_key)
+
+    # --- collisions: promote over ask, warn on deny ---
+    allow = set(perms.get("allow", []))
+    promoted = sorted(allow & set(perms.get("ask", [])))
+    if promoted:
+        perms["ask"] = sorted(set(perms["ask"]) - allow)
+
+    deny = set(perms.get("deny", []))
+    warnings = []
+    for pat in sorted(allow & deny):
+        warnings.append(f"'{pat}' is in BOTH allow and deny -- deny wins; left as-is")
+    for pat in sorted(set(perms.get("ask", [])) & deny):
+        warnings.append(f"'{pat}' is in BOTH ask and deny -- deny wins; left as-is")
+
+    # --- serialize + decide what changed ---
+    new_settings_text = dumps(settings)
+    settings_changed = new_settings_text != settings_text
+    local_changed = local_text != LOCAL_CANARY
+
+    # --- report ---
+    section("Claude settings.local sync" + ("" if args.apply else "  (DRY RUN)"))
+    print(f"  settings.json  : {SETTINGS}")
+    print(f"  settings.local : {LOCAL}")
+    print()
+
+    if moved:
+        total = sum(len(v) for v in moved.values())
+        section(f"Permissions moved (local -> settings.json): {total}")
+        for cat in PERMISSION_KEYS:
+            for item in moved.get(cat, []):
+                shown = item if isinstance(item, str) else json.dumps(item, sort_keys=True)
+                print(f"  + [{cat}] {shown}")
+        print()
+    else:
+        print("No new permissions in settings.local.json to move.\n")
+
+    if promoted:
+        section("Promoted over ask (removed from ask; now allow-only)")
+        for pat in promoted:
+            print(f"  {pat}")
+        print()
+
+    if warnings:
+        section("WARNINGS -- resolve by hand")
+        for w in warnings:
+            print(f"  ! {w}")
+        print()
+
+    section("Result")
+    if settings_changed:
+        verb = "updated" if args.apply else "would change"
+        print(f"  settings.json  : {verb} (merged and/or alphabetized)")
+    else:
+        print("  settings.json  : already canonical (no change)")
+    if local_changed:
+        verb = "reset to" if args.apply else "would reset to"
+        print(f"  settings.local : {verb} {EMPTY}")
+    else:
+        print(f"  settings.local : already empty ({EMPTY})")
+
+    if not args.apply and settings_changed:
+        print()
+        section("settings.json diff (dry run)")
+        sys.stdout.writelines(
+            difflib.unified_diff(
+                settings_text.splitlines(keepends=True),
+                new_settings_text.splitlines(keepends=True),
+                fromfile="settings.json (current)",
+                tofile="settings.json (after --apply)",
+            )
+        )
+        print()
+
+    if args.apply:
+        if settings_changed:
+            atomic_write(SETTINGS, new_settings_text)
+        if local_changed:
+            atomic_write(LOCAL, LOCAL_CANARY)
+        print()
+        print("Applied. Review with `git -C ~/.dotfiles/private diff` and ship via /ajay-ship.")
+    elif settings_changed or local_changed:
+        print()
+        print("DRY RUN -- nothing written. Re-run with --apply to write.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
