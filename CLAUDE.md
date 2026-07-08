@@ -44,6 +44,7 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-chsh` — set default shell to fish
 - `shell-gsettings` — GNOME desktop settings (dark mode, workspaces, clock, dock favorites)
 - `shell-keybindings` — keyboard shortcuts (Alt+Tab window switching, Ctrl+Alt+T terminal)
+- `shell-gdm` — deploy `/etc/gdm/custom.conf` via `sudo install`
 - `shell-timezone` — set timezone to America/Los_Angeles
 - `shell-wallpaper` — set desktop wallpaper
 - `shell-meta-chef` — run Meta chef (soloctl)

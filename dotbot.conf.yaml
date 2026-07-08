@@ -206,6 +206,11 @@
       - - gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ binding '<Control><Alt>t'
         - "=> shell-keybindings: custom0 binding"
 
+- shell-gdm:
+  - shell:
+      - - sudo -v && sudo install -m 0644 -o root -g root dotfiles/gdm/custom.conf /etc/gdm/custom.conf
+        - "=> shell-gdm: deploy /etc/gdm/custom.conf"
+
 - shell-timezone:
   - shell:
       - - gsettings set org.gnome.desktop.datetime automatic-timezone false
