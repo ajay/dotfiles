@@ -6,9 +6,12 @@ Claude Code appends permissions you accept mid-session to ~/.claude/settings.loc
 synced settings.json so they persist and propagate across machines, then resets
 settings.local.json to its empty canary ({}).
 
-It also keeps settings.json tidy: validates it as JSON and rewrites it canonically with
-every object key and permission list alphabetized (Claude writes in insertion order,
-which drifts and creates cross-machine merge noise).
+It also keeps settings.json tidy: validates it as JSON and rewrites it with the permission
+lists sorted + deduped (so the same accepted perm merges cleanly across machines). Object
+keys are left in Claude's own serialization order -- alphabetizing them just ping-pongs
+against Claude's writer (which re-emits in insertion order on every edit) and drifts back
+and forth forever. Claude preserves array order, so sorting the lists is safe; the output is
+byte-for-byte what Claude's own writer produces.
 
 Dry-run by default -- prints what it would change and touches nothing; pass --apply to
 write. Does not git-commit/push or run dotbot; ship separately with /ajay-ship.
@@ -69,8 +72,11 @@ def load_obj(path):
 
 
 def dumps(obj):
-    """Serialize in Claude's native style (2-space) with every object key alphabetized."""
-    return json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    """Serialize byte-for-byte like Claude's writer: 2-space indent, trailing newline,
+    keys left in their existing order. Do NOT sort keys -- Claude re-emits in insertion
+    order on every edit, so alphabetizing here just drifts back and forth. Permission
+    lists are sorted upstream in the merge (arrays don't ping-pong; Claude preserves them)."""
+    return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
 
 
 def usb_sort_key(dev):
@@ -200,7 +206,7 @@ def main():
     section("Result")
     if settings_changed:
         verb = "updated" if args.apply else "would change"
-        print(f"  settings.json  : {verb} (merged and/or alphabetized)")
+        print(f"  settings.json  : {verb} (merged and/or sorted permission lists)")
     else:
         print("  settings.json  : already canonical (no change)")
     if local_changed:
