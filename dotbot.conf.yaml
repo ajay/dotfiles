@@ -117,15 +117,22 @@
       stderr: true
 
 - shell-gnome-extensions:
-  - shell:
+  - if: 'test ! -f "$HOME/.local/share/gnome-shell/extensions/vertical-workspaces@G-dH.github.com/metadata.json" && test ! -f "/usr/share/gnome-shell/extensions/vertical-workspaces@G-dH.github.com/metadata.json"'
+    shell:
       - - gext install vertical-workspaces@G-dH.github.com
-        - "=> shell-gnome-extensions: V-Shell"
+        - "=> shell-gnome-extensions: V-Shell (install if missing)"
+  - if: 'test ! -f "$HOME/.local/share/gnome-shell/extensions/tactile@lundal.io/metadata.json" && test ! -f "/usr/share/gnome-shell/extensions/tactile@lundal.io/metadata.json"'
+    shell:
       - - gext install tactile@lundal.io
-        - "=> shell-gnome-extensions: Tactile"
+        - "=> shell-gnome-extensions: Tactile (install if missing)"
+  - if: 'test ! -f "$HOME/.local/share/gnome-shell/extensions/caffeine@patapon.info/metadata.json" && test ! -f "/usr/share/gnome-shell/extensions/caffeine@patapon.info/metadata.json"'
+    shell:
       - - gext install caffeine@patapon.info
-        - "=> shell-gnome-extensions: Caffeine"
+        - "=> shell-gnome-extensions: Caffeine (install if missing)"
+  - if: 'test ! -f "$HOME/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/metadata.json" && test ! -f "/usr/share/gnome-shell/extensions/Vitals@CoreCoding.com/metadata.json"'
+    shell:
       - - gext install Vitals@CoreCoding.com
-        - "=> shell-gnome-extensions: Vitals"
+        - "=> shell-gnome-extensions: Vitals (install if missing)"
 
 - shell-gnome-extension-settings:
   - shell:
