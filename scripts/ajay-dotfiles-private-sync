@@ -12,7 +12,17 @@ SUPER_BRANCH="$(git -C "$SUPER" rev-parse --abbrev-ref HEAD)"
 
 # git submodule update can leave the submodule on a detached HEAD; attach to its
 # branch first, else any commit we make here would be orphaned (never pushed).
-git -C "$SUB" checkout "$SUB_BRANCH"
+# A plain checkout fails if the branch is behind HEAD and the tree has edits.
+if [ "$(git -C "$SUB" rev-parse --abbrev-ref HEAD)" = HEAD ]; then
+  if git -C "$SUB" rev-parse --verify --quiet "$SUB_BRANCH" >/dev/null &&
+     ! git -C "$SUB" merge-base --is-ancestor "$SUB_BRANCH" HEAD; then
+    echo "ABORT: $SUB detached, $SUB_BRANCH has commits not in HEAD." >&2
+    exit 1
+  fi
+  git -C "$SUB" checkout -B "$SUB_BRANCH"
+else
+  git -C "$SUB" checkout "$SUB_BRANCH"
+fi
 
 # 1) Pull newest (rebase local commits on top; stash in-flight edits). On conflict,
 #    stop so it can be resolved by hand.
