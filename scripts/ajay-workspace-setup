@@ -16,7 +16,8 @@
 # Usage:
 #   ./workspace-setup.sh                       Set up workspace (auto-pick layout by monitor count)
 #   ./workspace-setup.sh --layout NAME         Use a specific layout (e.g. dual, single)
-#   ./workspace-setup.sh --reset               Close all windows, then set up
+#   ./workspace-setup.sh --reset               Close windows from the last run, then set up
+#   ./workspace-setup.sh --reset-all           Close EVERY window (except this one), then set up
 #   ./workspace-setup.sh --install             Install the helper extension only
 #   ./workspace-setup.sh --help                Show usage
 #
@@ -101,6 +102,9 @@ GRID_ROWS=2
 
 # Seconds to wait for each window to appear after launch
 WINDOW_WAIT_TIMEOUT=15
+
+# Seconds to wait for windows to actually close during --reset / --reset-all
+CLOSE_WAIT_TIMEOUT=15
 
 # Pause between positioning operations (seconds)
 OP_DELAY=0.05
@@ -672,37 +676,92 @@ track_window() {
     echo "$wid" >> "$STATE_FILE"
 }
 
+# Print the ids of all NORMAL windows, excluding $1 (-1 excludes none).
+list_window_ids() {
+    dbus_json ListWindows | jq -r --argjson ex "${1:--1}" '.[] | select(.id != $ex) | .id'
+}
+
+# Close the given window ids and poll until they are gone. Dies if any survive:
+# an unsaved-changes prompt blocks CloseWindow, and we must not lay out over it.
+close_windows() {
+    local -a ids=("$@")
+    (( ${#ids[@]} )) || return 0
+
+    local want
+    want=$(printf '%s\n' "${ids[@]}" | jq -Rs '[split("\n")[] | select(length > 0) | tonumber]')
+
+    # Requested ids that are still live, via jq array subtraction.
+    local live_query='[.[].id] as $live | $want - ($want - $live) | .[]'
+
+    # Narrow to what is actually open — the state file can hold stale ids.
+    local -a alive=()
+    mapfile -t alive < <(dbus_json ListWindows | jq -r --argjson want "$want" "$live_query")
+    if (( ${#alive[@]} == 0 )); then
+        log "No matching windows still open."
+        return 0
+    fi
+
+    local closing=${#alive[@]} wid
+    for wid in "${alive[@]}"; do
+        dbus_call CloseWindow "$wid" >/dev/null 2>&1 || true
+    done
+
+    local elapsed=0
+    while :; do
+        mapfile -t alive < <(dbus_json ListWindows | jq -r --argjson want "$want" "$live_query")
+        if (( ${#alive[@]} == 0 )); then break; fi
+        if (( elapsed >= CLOSE_WAIT_TIMEOUT * 10 )); then break; fi
+        sleep 0.1
+        (( ++elapsed ))
+    done
+
+    if (( ${#alive[@]} > 0 )); then
+        die "Timed out after ${CLOSE_WAIT_TIMEOUT}s — ${#alive[@]} window(s) would not close:
+$(dbus_json ListWindows | jq -r --argjson want "$want" \
+    '.[] | select(.id as $i | $want | index($i)) | "    \(.wmClass): \(.title)"')
+  An unsaved-changes prompt blocks CloseWindow. Close them by hand, then re-run."
+    fi
+
+    log "Closed $closing window(s)."
+}
+
 reset_windows() {
     if [[ ! -f "$STATE_FILE" ]]; then
         log "No previous session to reset (no state file)."
         return
     fi
-    log "Closing windows from previous session..."
-    local count=0
-    while read -r wid; do
-        if dbus_call CloseWindow "$wid" >/dev/null 2>&1; then
-            (( ++count ))
-        fi
-    done < "$STATE_FILE"
-    rm -f "$STATE_FILE"
-    if (( count > 0 )); then
-        sleep 2
-        log "Closed $count window(s)."
-    else
-        log "No tracked windows still open."
+    local -a ids=()
+    mapfile -t ids < <(grep -E '^[0-9]+$' "$STATE_FILE" || true)
+    if (( ${#ids[@]} == 0 )); then
+        log "No tracked windows to close."
+        return
     fi
+    log "Closing windows from previous session..."
+    close_windows "${ids[@]}"
+}
+
+reset_all_windows() {
+    local -a ids=()
+    mapfile -t ids < <(list_window_ids "${1:--1}")
+    if (( ${#ids[@]} == 0 )); then
+        log "No windows to close."
+        return
+    fi
+    log "Closing ALL ${#ids[@]} window(s)..."
+    close_windows "${ids[@]}"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
-    local do_reset=0 install_only=0
+    local do_reset=0 do_reset_all=0 install_only=0
     local requested_layout=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --reset)   do_reset=1 ;;
-            --install) install_only=1 ;;
+            --reset)     do_reset=1 ;;
+            --reset-all) do_reset_all=1 ;;
+            --install)   install_only=1 ;;
             --layout)
                 shift
                 [[ $# -gt 0 ]] || die "--layout requires a value (available: $(list_layouts))"
@@ -755,7 +814,9 @@ main() {
     launcher_wid=$(dbus_call GetFocusedWindowId 2>/dev/null \
         | sed -n 's/.* \([0-9]\+\),.*/\1/p') || launcher_wid=""
 
-    if (( do_reset )); then
+    if (( do_reset_all )); then
+        reset_all_windows "${launcher_wid:--1}"
+    elif (( do_reset )); then
         reset_windows
     fi
 
