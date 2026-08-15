@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 #
-# workspace-setup.sh
+# ajay-workspace-setup
 #
 # Automated workspace layout for Fedora Linux (GNOME, X11 or Wayland).
 # Launches applications and tiles their windows across monitors and
 # workspaces using a Tactile-style grid reference system.
 #
 # This script ships a small GNOME Shell extension that provides a D-Bus
-# API for window positioning.  The extension is automatically installed
+# API for window positioning. The extension is automatically installed
 # and enabled on first run.
 #
 # Dependencies: jq, gdbus (glib2), gnome-extensions
 #   Install:  sudo dnf install jq
 #
 # Usage:
-#   ./workspace-setup.sh                       Set up workspace (auto-pick layout by monitor count)
-#   ./workspace-setup.sh --layout NAME         Use a specific layout (e.g. dual, single)
-#   ./workspace-setup.sh --reset               Close windows from the last run, then set up
-#   ./workspace-setup.sh --reset-all           Close EVERY window (except this one), then set up
-#   ./workspace-setup.sh --install             Install the helper extension only
-#   ./workspace-setup.sh --help                Show usage
+#   ajay-workspace-setup                       Set up workspace (auto-pick layout by monitor count)
+#   ajay-workspace-setup --layout NAME         Use a specific layout (e.g. dual, single)
+#   ajay-workspace-setup --reset               Close windows from the last run, then set up
+#   ajay-workspace-setup --reset-all           Close EVERY window (except this one), then set up
+#   ajay-workspace-setup --install             Install the helper extension only
+#   ajay-workspace-setup --help                Show usage
 #
 set -euo pipefail
 
@@ -55,10 +55,10 @@ set -euo pipefail
 #
 # Layouts are declared as bash arrays named LAYOUT_<NAME> (uppercase).
 # To add a layout, declare another array; --layout <name> will pick it up
-# automatically (matching is case-insensitive).  DEFAULT_LAYOUT_BY_MONITORS
+# automatically (matching is case-insensitive). DEFAULT_LAYOUT_BY_MONITORS
 # below maps detected monitor count -> layout name used when --layout is
 # omitted; an unmapped count is an error.
-# ------------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
 
 # Quote a string for a fish single-quoted context (fish escapes only \ and ').
 fish_quote() {
@@ -94,10 +94,10 @@ terminal_run() {
 }
 
 LAYOUT_DUAL=(
-    # ── Workspace 1: browser ─────────────────────────────────────────────────
+    # ── Workspace 1: browser ──────────────────────────────────────────────────
     "1:0:Q-F:google-chrome --new-window"
 
-    # ── Workspace 2: flockboss firmware ──────────────────────────────────────
+    # ── Workspace 2: flockboss firmware ───────────────────────────────────────
     "2:0:Q-S:subl --launch-or-new-window"
     "2:0:E-F:$(terminal_run 'claude /ajay-init-flockboss')"
     "2:1:Q-W:$(terminal_run 'cd fbsource && commandline "rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt"')"
@@ -105,23 +105,23 @@ LAYOUT_DUAL=(
     "2:1:A-S:$(terminal_run 'cd ~/fbsource && hg pull && hg cloud sync --full && hg st && hg fssl --pager=no')"
     "2:1:D-F:$(terminal 'adb-devices')"
 
-    # ── Workspace 3: scratch terminals ───────────────────────────────────────
+    # ── Workspace 3: scratch terminals ────────────────────────────────────────
     "3:0:Q-S:$(terminal)"
     "3:0:E-F:$(terminal)"
 
-    # ── Workspace 4: dotfiles ────────────────────────────────────────────────
+    # ── Workspace 4: dotfiles ─────────────────────────────────────────────────
     "4:0:Q-S:$(terminal 'claude /ajay-init-dotfiles')"
     "4:0:E-F:$(terminal_run 'cd ~/.dotfiles')"
 )
 
 LAYOUT_SINGLE=(
-    # ── Workspace 1: browser ─────────────────────────────────────────────────
+    # ── Workspace 1: browser ──────────────────────────────────────────────────
     "1:0:Q-F:google-chrome --new-window"
 
-    # ── Workspace 2: editor ──────────────────────────────────────────────────
+    # ── Workspace 2: editor ───────────────────────────────────────────────────
     "2:0:Q-F:subl -n"
 
-    # ── Workspace 3: terminals ───────────────────────────────────────────────
+    # ── Workspace 3: terminals ────────────────────────────────────────────────
     "3:0:Q-W:$(terminal)"
     "3:0:E-R:$(terminal)"
     "3:0:A-S:$(terminal)"
@@ -165,9 +165,7 @@ DBUS_DEST="org.gnome.Shell"
 DBUS_PATH="/org/gnome/Shell/Extensions/AjayWorkspaceSetup"
 DBUS_IFACE="org.gnome.Shell.Extensions.AjayWorkspaceSetup"
 
-# UUIDs of older versions of this extension. When detected, disable
-# them and delete their on-disk files so they don't appear alongside
-# the current one in `gnome-extensions list`.
+# Older UUIDs of this extension, disabled and deleted when found.
 LEGACY_EXT_UUIDS=("workspace-setup@local")
 
 declare -A KEY_COL=([Q]=0 [W]=1 [E]=2 [R]=3 [A]=0 [S]=1 [D]=2 [F]=3)
@@ -191,8 +189,8 @@ list_layouts() {
 
 check_deps() {
     local missing=()
-    command -v jq       &>/dev/null || missing+=(jq)
-    command -v gdbus    &>/dev/null || missing+=(glib2)
+    command -v jq               &>/dev/null || missing+=(jq)
+    command -v gdbus            &>/dev/null || missing+=(glib2)
     command -v gnome-extensions &>/dev/null || missing+=(gnome-extensions)
     if (( ${#missing[@]} )); then
         die "Missing: ${missing[*]}.  Install with:  sudo dnf install ${missing[*]}"
@@ -248,7 +246,7 @@ install_extension() {
     (( max_major < 48 )) && max_major=48
     versions_json=$(seq 45 "$max_major" | sed 's/.*/"&"/' | paste -sd, -)
 
-    # ── metadata.json ─────────────────────────────────────────────────────
+    # ── metadata.json ─────────────────────────────────────────────────────────
     cat > "$EXT_DIR/metadata.json" << METADATA
 {
     "uuid": "ajay-workspace-setup-helper@local",
@@ -259,7 +257,7 @@ install_extension() {
 }
 METADATA
 
-    # ── extension.js ──────────────────────────────────────────────────────
+    # ── extension.js ──────────────────────────────────────────────────────────
     cat > "$EXT_DIR/extension.js" << 'EXTJS'
 import Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
@@ -343,7 +341,7 @@ export default class AjayWorkspaceSetupExtension extends Extension {
         const result = [];
         for (let i = 0; i < n; i++) {
             const geo = display.get_monitor_geometry(i);
-            const wa  = ws.get_work_area_for_monitor(i);
+            const wa = ws.get_work_area_for_monitor(i);
             result.push({
                 index: i,
                 x: geo.x, y: geo.y,
@@ -368,9 +366,9 @@ export default class AjayWorkspaceSetupExtension extends Extension {
                     const w = a.meta_window;
                     const r = w.get_frame_rect();
                     return {
-                        id:        w.get_stable_sequence(),
-                        title:     w.get_title()     || '',
-                        wmClass:   w.get_wm_class()  || '',
+                        id: w.get_stable_sequence(),
+                        title: w.get_title() || '',
+                        wmClass: w.get_wm_class() || '',
                         workspace: w.get_workspace()?.index() ?? -1,
                         x: r.x, y: r.y,
                         width: r.width, height: r.height,
@@ -382,8 +380,7 @@ export default class AjayWorkspaceSetupExtension extends Extension {
     MoveResize(id, x, y, w, h) {
         const win = this._findWindow(id);
         if (!win) return false;
-        if (win.get_maximize_flags())
-            win.unmaximize(Meta.MaximizeFlags.BOTH);
+        if (win.get_maximize_flags()) win.unmaximize(Meta.MaximizeFlags.BOTH);
 
         // Wayland clients can't be reliably moved across monitors via
         // move_resize_frame alone — relocate explicitly first, then size.
@@ -393,7 +390,7 @@ export default class AjayWorkspaceSetupExtension extends Extension {
         for (let i = 0; i < n; i++) {
             const g = display.get_monitor_geometry(i);
             if (x >= g.x && x < g.x + g.width &&
-                y >= g.y && y < g.y + g.height) {
+                    y >= g.y && y < g.y + g.height) {
                 targetMon = i;
                 break;
             }
@@ -467,7 +464,7 @@ EXTJS
     log "If this is the first install you may need to log out and back in."
 }
 
-# ── Extension readiness check ─────────────────────────────────────────────────
+# ── Legacy cleanup & extension readiness ──────────────────────────────────────
 
 cleanup_legacy_extensions() {
     local uuid legacy_dir
@@ -490,7 +487,7 @@ check_extension() {
 
     local state
     state=$(gnome-extensions show "$EXT_UUID" 2>/dev/null \
-            | grep -oP 'State: \K.*' || echo "NOT_FOUND")
+        | grep -oP 'State: \K.*' || echo "NOT_FOUND")
 
     # OUT OF DATE typically means a GNOME Shell upgrade since the extension
     # was installed. Refresh the on-disk metadata so the next Shell load
@@ -522,7 +519,7 @@ check_extension() {
         gnome-extensions enable "$EXT_UUID" 2>/dev/null || true
         sleep 2
         state=$(gnome-extensions show "$EXT_UUID" 2>/dev/null \
-                | grep -oP 'State: \K.*' || echo "NOT_FOUND")
+            | grep -oP 'State: \K.*' || echo "NOT_FOUND")
         if [[ "$state" != "ACTIVE" && "$state" != "ENABLED" ]]; then
             die "Extension could not be activated (state: $state).
   Try logging out and back in, then run this script again."
@@ -562,7 +559,7 @@ detect_monitors() {
 
 # ── Tactile grid → pixel geometry ─────────────────────────────────────────────
 
-# Print  X Y W H  for a grid position on a given (sorted) monitor index.
+# Print "X Y W H" for a grid position on a given (sorted) monitor index.
 tactile_to_geometry() {
     local pos="$1" mon="$2"
 
@@ -593,7 +590,7 @@ tactile_to_geometry() {
     echo "$win_x $win_y $win_w $win_h"
 }
 
-# Returns 0 (true) if the position covers the entire grid.
+# True if the position covers the entire grid.
 is_fullscreen_position() {
     local pos="$1"
     local start="${pos%-*}" end="${pos#*-}"
@@ -609,7 +606,7 @@ is_fullscreen_position() {
 
 # ── Window management ─────────────────────────────────────────────────────────
 
-# Launch $1, wait for a new window, print its ID.
+# Launch $1, wait for a new window, print its id.
 launch_and_find_window() {
     local cmd="$1"
     local before_json
@@ -649,7 +646,6 @@ position_window() {
     local wid="$1" pos="$2" mon="$3"
 
     if is_fullscreen_position "$pos"; then
-        # Move to the monitor's work area, then maximize.
         local wa_x wa_y wa_w wa_h
         wa_x=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.x")
         wa_y=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.y")
@@ -683,7 +679,7 @@ position_window() {
 
 # ── Workspace management ──────────────────────────────────────────────────────
 
-# Verify the system has enough workspaces for the layout without changing settings.
+# Verify the system has enough workspaces for the layout; never changes it.
 check_workspaces() {
     local needed="$1"
     local have
@@ -706,7 +702,7 @@ check_workspaces() {
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
-# Save a window ID to the state file so --reset can close it later.
+# Save a window id to the state file so --reset can close it later.
 track_window() {
     local wid="$1"
     mkdir -p "$(dirname "$STATE_FILE")"
@@ -740,7 +736,7 @@ close_windows() {
 
     local closing=${#alive[@]} wid
     for wid in "${alive[@]}"; do
-        dbus_call CloseWindow "$wid" >/dev/null 2>&1 || true
+        dbus_call CloseWindow "$wid" &>/dev/null || true
     done
 
     local elapsed=0
@@ -794,14 +790,14 @@ main() {
     local do_reset=0 do_reset_all=0 install_only=0
     local requested_layout=""
 
-    while [[ $# -gt 0 ]]; do
+    while (( $# > 0 )); do
         case "$1" in
             --reset)     do_reset=1 ;;
             --reset-all) do_reset_all=1 ;;
             --install)   install_only=1 ;;
             --layout)
                 shift
-                [[ $# -gt 0 ]] || die "--layout requires a value (available: $(list_layouts))"
+                (( $# > 0 )) || die "--layout requires a value (available: $(list_layouts))"
                 requested_layout="$1"
                 ;;
             --layout=*) requested_layout="${1#--layout=}" ;;
@@ -829,11 +825,11 @@ main() {
     check_extension
     detect_monitors
 
-    # Resolve which layout to use.
     local layout_name="$requested_layout"
     if [[ -z "$layout_name" ]]; then
         layout_name="${DEFAULT_LAYOUT_BY_MONITORS[$MON_COUNT]:-}"
-        [[ -n "$layout_name" ]] || die "No default layout for $MON_COUNT monitor(s). Pass --layout NAME (available: $(list_layouts)) or add [$MON_COUNT]=... to DEFAULT_LAYOUT_BY_MONITORS."
+        [[ -n "$layout_name" ]] \
+            || die "No default layout for $MON_COUNT monitor(s). Pass --layout NAME (available: $(list_layouts)) or add [$MON_COUNT]=... to DEFAULT_LAYOUT_BY_MONITORS."
         log "Auto-selected layout '$layout_name' for $MON_COUNT monitor(s)."
     else
         log "Using layout '$layout_name' (--layout)."
@@ -857,10 +853,8 @@ main() {
         reset_windows
     fi
 
-    # Clear state file for this new session.
     rm -f "$STATE_FILE"
 
-    # Determine maximum workspace number.
     local max_ws=1
     for entry in "${LAYOUT[@]}"; do
         IFS=: read -r ws _ _ _ <<< "$entry"
@@ -868,10 +862,8 @@ main() {
     done
     check_workspaces "$max_ws"
 
-    # Process each workspace in order.
     local ws
     for (( ws = 1; ws <= max_ws; ws++ )); do
-        # Collect entries for this workspace.
         local -a ws_entries=()
         for entry in "${LAYOUT[@]}"; do
             IFS=: read -r ews _ _ _ <<< "$entry"
@@ -880,7 +872,7 @@ main() {
         (( ${#ws_entries[@]} == 0 )) && continue
 
         log "── Workspace $ws ──"
-        dbus_call ActivateWorkspace $(( ws - 1 )) >/dev/null || true
+        dbus_call ActivateWorkspace "$(( ws - 1 ))" >/dev/null || true
         sleep "$OP_DELAY"
 
         for entry in "${ws_entries[@]}"; do
@@ -896,15 +888,13 @@ main() {
                 continue
             fi
 
-            # Ensure the window is on the correct workspace.
-            dbus_call MoveToWorkspace "$wid" $(( ws - 1 )) >/dev/null || true
+            dbus_call MoveToWorkspace "$wid" "$(( ws - 1 ))" >/dev/null || true
 
             position_window "$wid" "$pos" "$mon"
             track_window "$wid"
         done
     done
 
-    # Return to the launching terminal, or default to workspace 1.
     if [[ -n "$launcher_wid" && "$launcher_wid" != "0" ]]; then
         sleep 0.1
         dbus_call FocusWindow "$launcher_wid" >/dev/null || true
