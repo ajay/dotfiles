@@ -58,14 +58,22 @@ set -euo pipefail
 LAYOUT_DUAL=(
     # ── Workspace 1 ──────────────────────────────────────────────────────────
     "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
-    "1:1:Q-S:nautilus --new-window"          # Files left-half, right monitor
 
     # ── Workspace 2 ──────────────────────────────────────────────────────────
-    "2:0:Q-F:subl -n"                        # Sublime Text maximized, left mon
+    "2:0:Q-S:subl --launch-or-new-window"    # Sublime Text left-half, left mon
+    "2:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
     "2:1:Q-W:ptyxis --new-window"            # Terminal top-left 1/4, right mon
     "2:1:E-R:ptyxis --new-window"            # Terminal top-right 1/4
     "2:1:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
     "2:1:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+
+    # ── Workspace 3 ──────────────────────────────────────────────────────────
+    "3:0:Q-S:ptyxis --new-window"            # Terminal left-half, left mon
+    "3:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
+
+    # ── Workspace 4 ──────────────────────────────────────────────────────────
+    "4:0:Q-S:ptyxis --new-window"            # Terminal left-half, left mon
+    "4:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
 )
 
 LAYOUT_SINGLE=(
@@ -100,13 +108,18 @@ OP_DELAY=0.05
 # Gap between tiled windows in pixels (0 = edge-to-edge)
 TILE_GAP=0
 
+# Verify each tiled placement and re-apply if it drifted (belt-and-braces for
+# apps that finish mapping late); attempts and settle time between them
+PLACEMENT_ATTEMPTS=3
+PLACEMENT_SETTLE=0.4
+
 # ══════════════════════════════════════════════════════════════════════════════
 #                               INTERNALS
 # ══════════════════════════════════════════════════════════════════════════════
 
 EXT_UUID="ajay-workspace-setup-helper@local"
 EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
-EXT_EXPECTED_VERSION=3
+EXT_EXPECTED_VERSION=4
 DBUS_DEST="org.gnome.Shell"
 DBUS_PATH="/org/gnome/Shell/Extensions/AjayWorkspaceSetup"
 DBUS_IFACE="org.gnome.Shell.Extensions.AjayWorkspaceSetup"
@@ -193,7 +206,7 @@ install_extension() {
     "name": "ajay-workspace-setup-helper",
     "description": "D-Bus interface for programmatic window positioning",
     "shell-version": [$versions_json],
-    "version": 3
+    "version": 4
 }
 METADATA
 
@@ -339,7 +352,9 @@ export default class AjayWorkspaceSetupExtension extends Extension {
         if (targetMon >= 0 && win.get_monitor() !== targetMon)
             win.move_to_monitor(targetMon);
 
-        win.move_resize_frame(false, x, y, w, h);
+        // user_op=true: mark as a user placement so mutter's auto-placement
+        // won't re-center the window once a slow app finishes mapping.
+        win.move_resize_frame(true, x, y, w, h);
         return true;
     }
 
@@ -574,6 +589,12 @@ launch_and_find_window() {
     echo "$new_id"
 }
 
+# Print "X Y W H" for a window id; empty if the window is gone.
+window_rect() {
+    dbus_json ListWindows | jq -r --argjson id "$1" \
+        '.[] | select(.id == $id) | "\(.x) \(.y) \(.width) \(.height)"'
+}
+
 # Place a window at a Tactile grid position on a sorted monitor index.
 position_window() {
     local wid="$1" pos="$2" mon="$3"
@@ -589,9 +610,23 @@ position_window() {
         sleep "$OP_DELAY"
         dbus_call Maximize "$wid" >/dev/null
     else
-        local x y w h
+        local x y w h want actual attempt
         read -r x y w h <<< "$(tactile_to_geometry "$pos" "$mon")"
-        dbus_call MoveResize "$wid" "$x" "$y" "$w" "$h" >/dev/null
+        want="$x $y $w $h"
+        for (( attempt = 1; attempt <= PLACEMENT_ATTEMPTS; attempt++ )); do
+            dbus_call MoveResize "$wid" "$x" "$y" "$w" "$h" >/dev/null
+            sleep "$PLACEMENT_SETTLE"
+            actual=$(window_rect "$wid")
+            if [[ "$actual" == "$want" ]]; then
+                break
+            fi
+            if (( attempt < PLACEMENT_ATTEMPTS )); then
+                log "  $pos drifted to ${actual:-gone}, re-placing"
+            fi
+        done
+        if [[ "$actual" != "$want" ]]; then
+            warn "$pos did not hold (want '$want', got '${actual:-gone}')"
+        fi
     fi
 
     log "  positioned $pos on monitor $mon"
