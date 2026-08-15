@@ -178,10 +178,18 @@ dbus_call() {
 dbus_json() {
     local raw
     raw=$(dbus_call "$@") || return 1
-    # Strip GVariant wrapper:  ('{"json": ...}',)  →  {"json": ...}
-    raw="${raw#\(\'}"
-    raw="${raw%\',\)}"
-    echo "$raw"
+    # Strip the GVariant tuple wrapper: (<string>,). g_variant_print() switches
+    # from single to double quotes when the payload holds an apostrophe, escaping
+    # the inner quotes — that form is JSON string syntax, so let jq decode it.
+    raw="${raw#\(}"
+    raw="${raw%,\)}"
+    if [[ "$raw" == \"*\" ]]; then
+        jq -r . <<< "$raw"
+    else
+        raw="${raw#\'}"
+        raw="${raw%\'}"
+        printf '%s\n' "$raw"
+    fi
 }
 
 # ── Extension installation ────────────────────────────────────────────────────
