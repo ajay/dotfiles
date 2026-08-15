@@ -47,7 +47,11 @@ set -euo pipefail
 #   WORKSPACE  1-based workspace number
 #   MONITOR    0-based monitor position (0 = leftmost, 1 = next, ...)
 #   POSITION   Tactile grid reference
-#   COMMAND    Shell command to launch the application
+#   COMMAND    Shell command to launch the application. For terminals use the
+#              helpers defined below — they handle the fish/eval quoting:
+#                $(terminal)          plain terminal
+#                $(terminal CMD)      CMD typed at the prompt, not run
+#                $(terminal_run CMD)  CMD echoed and executed
 #
 # Layouts are declared as bash arrays named LAYOUT_<NAME> (uppercase).
 # To add a layout, declare another array; --layout <name> will pick it up
@@ -56,39 +60,72 @@ set -euo pipefail
 # omitted; an unmapped count is an error.
 # ------------------------------------------------------------------------------
 
+# Quote a string for a fish single-quoted context (fish escapes only \ and ').
+fish_quote() {
+    local s=${1//\\/\\\\}
+    s=${s//\'/\\\'}
+    printf "'%s'" "$s"
+}
+
+# Terminal for a layout entry, with CMD typed into the prompt but NOT run; no
+# CMD gives a plain terminal. %q carries the fish code through the eval in
+# launch_and_find_window, and ptyxis's `--` form passes argv on unparsed, so
+# that is the only quoting layer. `-- fish` is what a default ptyxis window
+# already runs here (fish is the login shell, login-shell=false); the shell
+# stays interactive after -C, so the window does not close.
+terminal() {
+    local cmd="${1:-}"
+    if [[ -z "$cmd" ]]; then
+        printf 'ptyxis --new-window'
+    else
+        printf 'ptyxis --new-window -- fish -C %q' "commandline $(fish_quote "$cmd")"
+    fi
+}
+
+# Terminal that echoes CMD after a prompt and then runs it.
+terminal_run() {
+    local cmd="${1:-}"
+    if [[ -z "$cmd" ]]; then
+        terminal
+        return
+    fi
+    printf 'ptyxis --new-window -- fish -C %q' \
+        "fish_prompt && echo $(fish_quote "$cmd") && set fish_trace 1 && $cmd && set fish_trace 0"
+}
+
 LAYOUT_DUAL=(
-    # ── Workspace 1 ──────────────────────────────────────────────────────────
-    "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
+    # ── Workspace 1: browser ─────────────────────────────────────────────────
+    "1:0:Q-F:google-chrome --new-window"
 
-    # ── Workspace 2 ──────────────────────────────────────────────────────────
-    "2:0:Q-S:subl --launch-or-new-window"    # Sublime Text left-half, left mon
-    "2:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
-    "2:1:Q-W:ptyxis --new-window"            # Terminal top-left 1/4, right mon
-    "2:1:E-R:ptyxis --new-window"            # Terminal top-right 1/4
-    "2:1:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
-    "2:1:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+    # ── Workspace 2: flockboss firmware ──────────────────────────────────────
+    "2:0:Q-S:subl --launch-or-new-window"
+    "2:0:E-F:$(terminal_run 'claude /ajay-init-flockboss')"
+    "2:1:Q-W:$(terminal_run 'cd fbsource && commandline "rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt"')"
+    "2:1:E-R:$(terminal 'adb-root-remount-shell')"
+    "2:1:A-S:$(terminal_run 'cd ~/fbsource && hg pull && hg cloud sync --full && hg st && hg fssl --pager=no')"
+    "2:1:D-F:$(terminal 'adb-devices')"
 
-    # ── Workspace 3 ──────────────────────────────────────────────────────────
-    "3:0:Q-S:ptyxis --new-window"            # Terminal left-half, left mon
-    "3:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
+    # ── Workspace 3: scratch terminals ───────────────────────────────────────
+    "3:0:Q-S:$(terminal)"
+    "3:0:E-F:$(terminal)"
 
-    # ── Workspace 4 ──────────────────────────────────────────────────────────
-    "4:0:Q-S:ptyxis --new-window"            # Terminal left-half, left mon
-    "4:0:E-F:ptyxis --new-window"            # Terminal right-half, left mon
+    # ── Workspace 4: dotfiles ────────────────────────────────────────────────
+    "4:0:Q-S:$(terminal 'claude /ajay-init-dotfiles')"
+    "4:0:E-F:$(terminal_run 'cd ~/.dotfiles')"
 )
 
 LAYOUT_SINGLE=(
-    # ── Workspace 1 ──────────────────────────────────────────────────────────
-    "1:0:Q-F:google-chrome --new-window"     # Chrome maximized, left monitor
+    # ── Workspace 1: browser ─────────────────────────────────────────────────
+    "1:0:Q-F:google-chrome --new-window"
 
-    # ── Workspace 2 ──────────────────────────────────────────────────────────
-    "2:0:Q-F:subl -n"                        # Sublime Text maximized, left mon
+    # ── Workspace 2: editor ──────────────────────────────────────────────────
+    "2:0:Q-F:subl -n"
 
-    # ── Workspace 3 ──────────────────────────────────────────────────────────
-    "3:0:Q-W:ptyxis --new-window"            # Terminal top-left 1/4, left mon
-    "3:0:E-R:ptyxis --new-window"            # Terminal top-right 1/4
-    "3:0:A-S:ptyxis --new-window"            # Terminal bottom-left 1/4
-    "3:0:D-F:ptyxis --new-window"            # Terminal bottom-right 1/4
+    # ── Workspace 3: terminals ───────────────────────────────────────────────
+    "3:0:Q-W:$(terminal)"
+    "3:0:E-R:$(terminal)"
+    "3:0:A-S:$(terminal)"
+    "3:0:D-F:$(terminal)"
 )
 
 declare -A DEFAULT_LAYOUT_BY_MONITORS=(
@@ -150,7 +187,7 @@ list_layouts() {
     compgen -A variable | sed -n 's/^LAYOUT_\(.*\)/\1/p' | tr '[:upper:]' '[:lower:]' | paste -sd, -
 }
 
-# ── Dependency checks ────────────────────────────────────────────────────────
+# ── Dependency checks ─────────────────────────────────────────────────────────
 
 check_deps() {
     local missing=()
@@ -430,7 +467,7 @@ EXTJS
     log "If this is the first install you may need to log out and back in."
 }
 
-# ── Extension readiness check ────────────────────────────────────────────────
+# ── Extension readiness check ─────────────────────────────────────────────────
 
 cleanup_legacy_extensions() {
     local uuid legacy_dir
@@ -644,7 +681,7 @@ position_window() {
     log "  positioned $pos on monitor $mon"
 }
 
-# ── Workspace management ─────────────────────────────────────────────────────
+# ── Workspace management ──────────────────────────────────────────────────────
 
 # Verify the system has enough workspaces for the layout without changing settings.
 check_workspaces() {
