@@ -50,9 +50,12 @@ set -euo pipefail
 #   POSITION   Tactile grid reference
 #   COMMAND    Shell command to launch the application. For terminals use the
 #              helpers defined below — they handle the fish/eval quoting:
-#                $(terminal)          plain terminal
-#                $(terminal CMD)      CMD typed at the prompt, not run
-#                $(terminal_run CMD)  CMD echoed and executed
+#                $(terminal)                plain terminal
+#                $(terminal CMD)            CMD typed at the prompt, not run
+#                $(terminal_run CMD)        CMD echoed and executed
+#              Both take an optional starting directory as a second argument;
+#              pass '' for the command to get a plain terminal in a directory:
+#                $(terminal CMD DIR)  $(terminal_run CMD DIR)  $(terminal '' DIR)
 #
 # Layouts are declared as bash arrays named LAYOUT_<NAME> (uppercase).
 # To add a layout, declare another array; --layout <name> will pick it up
@@ -68,30 +71,51 @@ fish_quote() {
     printf "'%s'" "$s"
 }
 
-# Terminal for a layout entry, with CMD typed into the prompt but NOT run; no
-# CMD gives a plain terminal. %q carries the fish code through the eval in
-# launch_and_find_window, and ptyxis's `--` form passes argv on unparsed, so
-# that is the only quoting layer. `-- fish` is what a default ptyxis window
-# already runs here (fish is the login shell, login-shell=false); the shell
-# stays interactive after -C, so the window does not close.
-terminal() {
-    local cmd="${1:-}"
-    if [[ -z "$cmd" ]]; then
-        printf 'ptyxis --new-window'
-    else
-        printf 'ptyxis --new-window -- fish -C %q' "commandline $(fish_quote "$cmd")"
+# ptyxis invocation with an optional starting directory and fish init command.
+# --working-directory is why neither helper emits a `cd`: cd is a fish function,
+# so fish_trace descends into it and buries the real command in ~25 lines.
+# It is always passed, defaulting to $HOME: a ptyxis window without it inherits
+# the cwd of whatever launched the script, so running this from a repo would
+# otherwise start every terminal there -- including the claude ones, which must
+# be in $HOME or their auto-memory store is keyed to the wrong project path.
+# %q carries the init through the eval in launch_and_find_window, and ptyxis's
+# `--` form passes argv on unparsed, so that is the only quoting layer.
+# `-- fish` is what a default ptyxis window already runs here (fish is the login
+# shell, login-shell=false); the shell stays interactive after -C, so the window
+# does not close.
+_ptyxis() {
+    local dir="${1:-$HOME}" init="${2:-}" out='ptyxis --new-window'
+    if [[ "$dir" == "~"* ]]; then dir="$HOME${dir#\~}"; fi
+    out+=" --working-directory=$(printf '%q' "$dir")"
+    if [[ -n "$init" ]]; then
+        out+=" -- fish -C $(printf '%q' "$init")"
     fi
+    printf '%s' "$out"
 }
 
-# Terminal that echoes CMD after a prompt and then runs it.
+# Terminal with CMD typed into the prompt but NOT run, optionally starting in DIR.
+terminal() {
+    local cmd="${1:-}" dir="${2:-}" init=""
+    if [[ -n "$cmd" ]]; then
+        init="commandline $(fish_quote "$cmd")"
+    fi
+    _ptyxis "$dir" "$init"
+}
+
+# Terminal that echoes CMD after a prompt and runs it under fish_trace,
+# optionally starting in DIR. CMD runs inside a throwaway function so the trace
+# flag is function-local and dies with the call: `set fish_trace 0` does NOT turn
+# tracing off, because fish traces on any non-empty value, "0" included.
 terminal_run() {
-    local cmd="${1:-}"
+    local cmd="${1:-}" dir="${2:-}"
     if [[ -z "$cmd" ]]; then
-        terminal
+        terminal "" "$dir"
         return
     fi
-    printf 'ptyxis --new-window -- fish -C %q' \
-        "fish_prompt && echo $(fish_quote "$cmd") && set fish_trace 1 && $cmd && set fish_trace 0"
+    local init="function __ajay_run; set -l fish_trace 1; $cmd; end"
+    init+="; fish_prompt && echo $(fish_quote "$cmd")"
+    init+="; __ajay_run; functions -e __ajay_run"
+    _ptyxis "$dir" "$init"
 }
 
 LAYOUT_DUAL=(
@@ -101,9 +125,9 @@ LAYOUT_DUAL=(
     # ── Workspace 2: flockboss firmware ───────────────────────────────────────
     "2:0:Q-S:subl --launch-or-new-window"
     "2:0:E-F:$(terminal_run 'claude /ajay-init-flockboss')"
-    "2:1:Q-W:$(terminal_run 'cd ~/fbsource && commandline "rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt"')"
+    "2:1:Q-W:$(terminal 'cd ~/fbsource && rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt')"
     "2:1:E-R:$(terminal 'adb-root-remount-shell')"
-    "2:1:A-S:$(terminal_run 'cd ~/fbsource && hg pull && hg cloud sync --full && hg st && hg fssl --pager=no')"
+    "2:1:A-S:$(terminal_run 'dev doctor && eden doctor && fish_trace= cd ~/fbsource && hg pull && hg cloud sync --full && hg st && hg fssl --pager=no')"
     "2:1:D-F:$(terminal 'adb-devices')"
 
     # ── Workspace 3: scratch terminals ────────────────────────────────────────
@@ -111,8 +135,8 @@ LAYOUT_DUAL=(
     "3:0:E-F:$(terminal)"
 
     # ── Workspace 4: dotfiles ─────────────────────────────────────────────────
-    "4:0:Q-S:$(terminal 'claude /ajay-init-dotfiles')"
-    "4:0:E-F:$(terminal_run 'cd ~/.dotfiles')"
+    "4:0:Q-S:$(terminal_run 'claude /ajay-init-dotfiles')"
+    "4:0:E-F:$(terminal_run 'git status' ~/.dotfiles)"
 )
 
 LAYOUT_SINGLE=(
