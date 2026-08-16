@@ -120,7 +120,7 @@ terminal_run() {
 
 LAYOUT_DUAL=(
     # ── Workspace 1: browser ──────────────────────────────────────────────────
-    "1:0:Q-F:google-chrome --new-window"
+    "1:0:Q-F:fish -c 'google-chrome-open-bookmark-folder work-start'"
 
     # ── Workspace 2: flockboss firmware ───────────────────────────────────────
     "2:0:Q-S:subl --launch-or-new-window"
@@ -137,6 +137,9 @@ LAYOUT_DUAL=(
     # ── Workspace 4: dotfiles ─────────────────────────────────────────────────
     "4:0:Q-S:$(terminal_run 'claude /ajay-init-dotfiles')"
     "4:0:E-F:$(terminal_run 'git status' ~/.dotfiles)"
+
+    # ── Workspace 6: browser ──────────────────────────────────────────────────
+    "6:1:Q-F:fish -c 'google-chrome-open-bookmark-folder mail'"
 )
 
 LAYOUT_SINGLE=(
