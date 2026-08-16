@@ -10,8 +10,8 @@
 # API for window positioning. The extension is automatically installed
 # and enabled on first run.
 #
-# Dependencies: jq, gdbus (glib2), gnome-extensions
-#   Install:  sudo dnf install jq
+# Dependencies: jq, gdbus (glib2), gnome-extensions (gnome-shell)
+#   Install:  sudo dnf install jq glib2 gnome-shell
 #
 # Usage:
 #   ajay-workspace-setup                       Set up workspace (auto-pick layout by monitor count)
@@ -101,7 +101,7 @@ LAYOUT_DUAL=(
     # ── Workspace 2: flockboss firmware ───────────────────────────────────────
     "2:0:Q-S:subl --launch-or-new-window"
     "2:0:E-F:$(terminal_run 'claude /ajay-init-flockboss')"
-    "2:1:Q-W:$(terminal_run 'cd fbsource && commandline "rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt"')"
+    "2:1:Q-W:$(terminal_run 'cd ~/fbsource && commandline "rr make -C ~/fbsource/arvr/firmware/projects/flockboss/firmware/apps/syncboss/ BOARD=loma_evt2 flash-fwmgmt"')"
     "2:1:E-R:$(terminal 'adb-root-remount-shell')"
     "2:1:A-S:$(terminal_run 'cd ~/fbsource && hg pull && hg cloud sync --full && hg st && hg fssl --pager=no')"
     "2:1:D-F:$(terminal 'adb-devices')"
@@ -195,9 +195,9 @@ check_deps() {
     local missing=()
     command -v jq               &>/dev/null || missing+=(jq)
     command -v gdbus            &>/dev/null || missing+=(glib2)
-    command -v gnome-extensions &>/dev/null || missing+=(gnome-extensions)
+    command -v gnome-extensions &>/dev/null || missing+=(gnome-shell)
     if (( ${#missing[@]} )); then
-        die "Missing: ${missing[*]}.  Install with:  sudo dnf install ${missing[*]}"
+        die "Missing package(s): ${missing[*]}.  Install with:  sudo dnf install ${missing[*]}"
     fi
 }
 
@@ -650,6 +650,7 @@ position_window() {
     local wid="$1" pos="$2" mon="$3"
 
     if is_fullscreen_position "$pos"; then
+        # Move first: Maximize acts on whichever monitor the window is already on.
         local wa_x wa_y wa_w wa_h
         wa_x=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.x")
         wa_y=$(echo "$MONITORS_JSON" | jq ".[$mon].workArea.y")
