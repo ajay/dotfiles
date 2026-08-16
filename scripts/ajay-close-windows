@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# ajay-close-windows
+#
+# Close all open windows. Windows that will not close quickly (unsaved-changes
+# or running-process prompts) are left alone and listed as still open.
+#
+# Usage:
+#   ajay-close-windows                  Close what closes easily; list the rest
+#   ajay-close-windows --all            Wait for every window; fail if any won't
+#   ajay-close-windows --self           Close this terminal too, last
+#   ajay-close-windows --no-self        Keep this terminal (undoes --all's default)
+#
+# The launching terminal is closed last and only when everything else closed,
+# so a survivor listing is never taken down with the window that printed it.
+#
+# Thin wrapper around: ajay-workspace-setup --close-all-windows
+#
+set -euo pipefail
+
+exec "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/ajay-workspace-setup" \
+    --close-all-windows "$@"

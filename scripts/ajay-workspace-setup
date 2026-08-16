@@ -18,6 +18,7 @@
 #   ajay-workspace-setup --layout NAME         Use a specific layout (e.g. dual, single)
 #   ajay-workspace-setup --reset               Close windows from the last run, then set up
 #   ajay-workspace-setup --reset-all           Close EVERY window (except this one), then set up
+#   ajay-workspace-setup --close-all-windows   Close every window; do not lay out
 #   ajay-workspace-setup --install             Install the helper extension only
 #   ajay-workspace-setup --help                Show usage
 #
@@ -140,8 +141,11 @@ GRID_ROWS=2
 # Seconds to wait for each window to appear after launch
 WINDOW_WAIT_TIMEOUT=15
 
-# Seconds to wait for windows to actually close during --reset / --reset-all
-CLOSE_WAIT_TIMEOUT=15
+# Seconds to wait for windows to actually close during --reset / --reset-all / --all
+CLOSE_WAIT_TIMEOUT=60
+
+# Seconds to let an easy window close before --close-all-windows gives up on it
+CLOSE_GRACE=1
 
 # Pause between positioning operations (seconds)
 OP_DELAY=0.05
@@ -714,9 +718,12 @@ list_window_ids() {
     dbus_json ListWindows | jq -r --argjson ex "${1:--1}" '.[] | select(.id != $ex) | .id'
 }
 
-# Close the given window ids and poll until they are gone. Dies if any survive:
-# an unsaved-changes prompt blocks CloseWindow, and we must not lay out over it.
+# close_windows <timeout-seconds> <die|report> <id>...
+# Close the given ids and poll until they are gone. An unsaved-changes prompt
+# blocks CloseWindow, so survivors either abort the run or are reported and the
+# function returns 1, per the second argument.
 close_windows() {
+    local timeout="$1" on_survivors="$2"; shift 2
     local -a ids=("$@")
     (( ${#ids[@]} )) || return 0
 
@@ -743,16 +750,24 @@ close_windows() {
     while :; do
         mapfile -t alive < <(dbus_json ListWindows | jq -r --argjson want "$want" "$live_query")
         if (( ${#alive[@]} == 0 )); then break; fi
-        if (( elapsed >= CLOSE_WAIT_TIMEOUT * 10 )); then break; fi
+        if (( elapsed >= timeout * 10 )); then break; fi
         sleep 0.1
         (( ++elapsed ))
     done
 
     if (( ${#alive[@]} > 0 )); then
-        die "Timed out after ${CLOSE_WAIT_TIMEOUT}s — ${#alive[@]} window(s) would not close:
-$(dbus_json ListWindows | jq -r --argjson want "$want" \
-    '.[] | select(.id as $i | $want | index($i)) | "    \(.wmClass): \(.title)"')
+        local listing
+        listing=$(dbus_json ListWindows | jq -r --argjson want "$want" \
+            '.[] | select(.id as $i | $want | index($i)) | "    \(.wmClass): \(.title)"')
+        if [[ "$on_survivors" == die ]]; then
+            die "Timed out after ${timeout}s — ${#alive[@]} window(s) would not close:
+$listing
   An unsaved-changes prompt blocks CloseWindow. Close them by hand, then re-run."
+        fi
+        warn "${#alive[@]} window(s) still open after ${timeout}s:
+$listing"
+        log "Closed $(( closing - ${#alive[@]} )) window(s)."
+        return 1
     fi
 
     log "Closed $closing window(s)."
@@ -770,7 +785,7 @@ reset_windows() {
         return
     fi
     log "Closing windows from previous session..."
-    close_windows "${ids[@]}"
+    close_windows "$CLOSE_WAIT_TIMEOUT" die "${ids[@]}"
 }
 
 reset_all_windows() {
@@ -781,19 +796,59 @@ reset_all_windows() {
         return
     fi
     log "Closing ALL ${#ids[@]} window(s)..."
-    close_windows "${ids[@]}"
+    close_windows "$CLOSE_WAIT_TIMEOUT" die "${ids[@]}"
+}
+
+# close_all_windows <launcher-id> <wait-all> <close-self>
+# Close every window and stop. The launcher goes last and only if everything
+# else closed, so a survivor listing is never taken down with the terminal that
+# printed it.
+close_all_windows() {
+    local keep="${1:--1}" wait_all="$2" close_self="$3"
+    local survived=0
+
+    local -a ids=()
+    mapfile -t ids < <(list_window_ids "$keep")
+    if (( ${#ids[@]} == 0 )); then
+        log "No windows to close."
+    else
+        log "Closing ${#ids[@]} window(s)..."
+        if (( wait_all )); then
+            close_windows "$CLOSE_WAIT_TIMEOUT" die "${ids[@]}"
+        else
+            close_windows "$CLOSE_GRACE" report "${ids[@]}" || survived=1
+        fi
+    fi
+
+    if (( ! close_self )); then
+        return 0
+    fi
+    if (( survived )); then
+        log "Leaving this terminal open so the list above stays readable."
+        return 0
+    fi
+    if [[ "$keep" == -1 ]]; then
+        return 0
+    fi
+    log "Closing this terminal."
+    dbus_call CloseWindow "$keep" &>/dev/null || true
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
     local do_reset=0 do_reset_all=0 install_only=0
+    local close_all=0 wait_all=0 close_self=-1
     local requested_layout=""
 
     while (( $# > 0 )); do
         case "$1" in
             --reset)     do_reset=1 ;;
             --reset-all) do_reset_all=1 ;;
+            --close-all-windows) close_all=1 ;;
+            --all)       wait_all=1 ;;
+            --self)      close_self=1 ;;
+            --no-self)   close_self=0 ;;
             --install)   install_only=1 ;;
             --layout)
                 shift
@@ -810,6 +865,12 @@ main() {
         shift
     done
 
+    if (( ! close_all )) && { (( wait_all )) || (( close_self >= 0 )); }; then
+        die "--all / --self / --no-self only apply with --close-all-windows"
+    fi
+    # --all closes the launcher too unless told otherwise.
+    (( close_self >= 0 )) || close_self=$(( wait_all ))
+
     check_deps
 
     # One-shot migration of the previous-session window-tracking cache.
@@ -823,6 +884,17 @@ main() {
     fi
 
     check_extension
+
+    # Remember the launching terminal so we can refocus (or close) it at the end.
+    local launcher_wid
+    launcher_wid=$(dbus_call GetFocusedWindowId 2>/dev/null \
+        | sed -n 's/.* \([0-9]\+\),.*/\1/p') || launcher_wid=""
+
+    if (( close_all )); then
+        close_all_windows "${launcher_wid:--1}" "$wait_all" "$close_self"
+        exit 0
+    fi
+
     detect_monitors
 
     local layout_name="$requested_layout"
@@ -841,11 +913,6 @@ main() {
     local -n LAYOUT="$layout_var"
     (( ${#LAYOUT[@]} > 0 )) \
         || die "Layout '$layout_name' is empty. Edit $layout_var in $0."
-
-    # Remember the launching terminal so we can refocus it at the end.
-    local launcher_wid
-    launcher_wid=$(dbus_call GetFocusedWindowId 2>/dev/null \
-        | sed -n 's/.* \([0-9]\+\),.*/\1/p') || launcher_wid=""
 
     if (( do_reset_all )); then
         reset_all_windows "${launcher_wid:--1}"

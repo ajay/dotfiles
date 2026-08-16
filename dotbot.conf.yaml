@@ -40,6 +40,7 @@
     ~/.local/bin/ajay-github-submodule-updater: scripts/ajay-github-submodule-updater
     ~/.local/bin/ajay-dotfiles-claude-settings-local-sync: scripts/ajay-dotfiles-claude-settings-local-sync
     ~/.local/bin/ajay-dotfiles-private-sync: scripts/ajay-dotfiles-private-sync
+    ~/.local/bin/ajay-close-windows: scripts/ajay-close-windows
     ~/.local/bin/ajay-workspace-setup: scripts/ajay-workspace-setup
 
 - shell-build-tools-deps:
