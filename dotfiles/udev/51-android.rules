@@ -1,0 +1,10 @@
+# Android debug bridge (adb) / fastboot
+#
+# Maintained here because android-tools ships no udev rules and Fedora has no
+# android-udev-rules package.
+
+# Google
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="18d1", MODE="0666", TAG+="uaccess"
+
+# Meta / Oculus
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2833", MODE="0666", TAG+="uaccess"

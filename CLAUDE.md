@@ -36,6 +36,8 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-dnf-update` — `dnf update` (Meta-aware: uses `up-no-meta` on Meta machines)
 - `shell-dnf` — install Fedora packages
 - `shell-nvidia` — install the NVIDIA driver (akmod-nvidia + CUDA) on machines with an NVIDIA GPU; no-op otherwise
+- `shell-jlink` — install the SEGGER J-Link RPM (downloaded from segger.com, not in any repo); skipped if already present
+- `shell-udev` — deploy `dotfiles/udev/*.rules` to `/etc/udev/rules.d`, reload, and warn about unmerged `.rpmnew` files; skipped on Meta machines, where Chef owns that directory
 - `shell-insync` — install Insync (Google Drive sync)
 - `shell-pip` — install Python packages from `scripts/requirements.txt`
 - `shell-gnome-extensions` — install GNOME extensions (V-Shell, Tactile, Caffeine, Vitals)
@@ -59,6 +61,16 @@ Steps can be skipped with `--except` flags (used by install-dev/lite/no-chef tar
 ## Dotfiles Layout
 
 Files under `dotfiles/` are symlinked to their home-directory locations by dotbot. The mapping is defined in `dotbot.conf.yaml` under the `link` section — only paths listed there are linked. Claude Code config lives in the `private` submodule, not the public tree: `private/dotfiles/claude/settings.json` and `settings.local.json` are symlinked to `~/.claude/`, `private/dotfiles/claude/CLAUDE.md` to `~/.claude/CLAUDE.md` (the user-level session guide), `private/dotfiles/claude/commands/` to `~/.claude/commands/`, and `private/dotfiles/claude/memory/` to `~/.claude/projects/-home-ajaysriv/memory/` (the unified auto-memory store). The commands are custom slash commands: `ajay-init` (read-only session bootstrap), `ajay-inspect-commit` (inspect the current commit/stack), `ajay-ship` (generate a stage/commit/push script), `ajay-handoff` (write cross-machine handoff docs into `.session-handoff/`), `ajay-resume` (resume work from those handoff docs on another machine), `ajay-init-*` project-bootstrap variants, and `ajay-permission-{build,scm}-{allow,deny}` (session-scoped toggles for whether Claude may run build tooling or write to source control).
+
+## udev rules
+
+`dotfiles/udev/` holds only the rules nothing else provides — currently just `51-android.rules` (adb/fastboot: `android-tools` ships no rules and Fedora has no `android-udev-rules` package). Everything else is left to whoever owns it: openocd, stlink and the SEGGER J-Link RPM ship rules with their packages, and Saleae's `99-SaleaeLogic.rules` comes with the Logic 2 download. Don't vendor those here — a copy in this repo would fight the owner's installer on every `make install`.
+
+**`shell-udev` is skipped on Meta machines** (`test ! -d /opt/facebook`). Chef owns `/etc/udev/rules.d` there and rewrites what it manages on every run, so anything this repo wrote would be reverted within the hour — and `51-android.rules` is one of the paths Chef declares. Never hand-edit a rules file on a Meta box either; fix it in the cookbook instead.
+
+Filenames must sort before `73-seat-late.rules`, which is where `TAG+="uaccess"` is turned into an ACL — a tag set by a later-sorting file is never acted on. Every uaccess-granting rule Fedora ships obeys this (`60-libjaylink`, `60-openocd`, `69-libftdi`, `70-uaccess`, `71-seat`).
+
+Rules are copied by `shell-udev`, not symlinked: dotbot's `link:` runs unprivileged and cannot write to root-owned `/etc`, rules must be readable at boot before `$HOME` is necessarily available, and on an SELinux-enforcing machine a symlink into `$HOME` resolves to a `user_home_t` file that confined udev is denied.
 
 ## Identity split: git vs hg
 

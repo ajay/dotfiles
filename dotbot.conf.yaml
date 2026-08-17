@@ -62,6 +62,7 @@
   - shell:
       - - sudo -v && sudo dnf -y install
           akmods
+          android-tools
           ansifilter
           apcalc
           fedora-workstation-repositories
@@ -71,9 +72,11 @@
           htop
           less
           meld
+          openocd
           python3-pip
           remove-retired-packages
           source-highlight
+          stlink
           strace
           vim
           vlc
@@ -98,6 +101,22 @@
     shell:
       - - sudo -v && sudo dnf -y config-manager setopt rpmfusion-nonfree-nvidia-driver.enabled=1 && sudo dnf -y install akmod-nvidia xorg-x11-drv-nvidia-cuda
         - "=> shell-nvidia: install NVIDIA driver (reboot afterwards)"
+
+- shell-jlink:
+  - if: 'test ! -x /usr/bin/JLinkExe'
+    shell:
+      - - sudo -v && curl -fsSL -X POST -d accept_license_agreement=accepted https://www.segger.com/downloads/jlink/JLink_Linux_x86_64.rpm -o /tmp/jlink.rpm && rpm -qp /tmp/jlink.rpm && sudo dnf -y install /tmp/jlink.rpm && rm -f /tmp/jlink.rpm
+        - "=> shell-jlink: install SEGGER J-Link (install if missing)"
+
+- shell-udev:
+  - if: 'test ! -d /opt/facebook'
+    shell:
+      - - sudo -v && sudo install -m 0644 -o root -g root dotfiles/udev/51-android.rules /etc/udev/rules.d/51-android.rules
+        - "=> shell-udev: deploy 51-android.rules"
+      - - sudo -v && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb
+        - "=> shell-udev: reload rules"
+      - - 'find /etc/udev/rules.d -name "*.rpmnew" -printf "WARNING: unmerged %p - package udev rules are stale\n"'
+        - "=> shell-udev: warn on unmerged *.rpmnew"
 
 - shell-insync:
   - shell:
