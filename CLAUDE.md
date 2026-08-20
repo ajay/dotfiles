@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Personal dotfiles managed by [dotbot](https://github.com/anishathalye/dotbot) (forked to `ajay/dotbot`) with a Make-based build system. Targets Fedora Linux with GNOME desktop.
 
+> ⚠️ **This repo is PUBLIC on GitHub.** Keep employer-internal content out of tracked files **and** commit messages — no internal hostnames, service names, ticket or review numbers, or internal paths. Anything sensitive belongs in the `private` submodule, which is where the Claude config already lives. When in doubt, put it in `private`.
+
 ## Commands
 
 ```bash
