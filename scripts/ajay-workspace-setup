@@ -272,18 +272,30 @@ dbus_call() {
 dbus_json() {
     local raw
     raw=$(dbus_call "$@") || return 1
-    # Strip the GVariant tuple wrapper: (<string>,). g_variant_print() switches
-    # from single to double quotes when the payload holds an apostrophe, escaping
-    # the inner quotes — that form is JSON string syntax, so let jq decode it.
+    # Strip the GVariant tuple wrapper: (<string>,). g_variant_print() single-quotes
+    # unless the payload holds an apostrophe, and escapes only \ and the quote it
+    # picked — so in the single-quoted form JSON's \" arrives as \\". Re-escape the
+    # bare " and both forms are JSON string literals jq can decode; stripping the
+    # quotes by hand instead leaves the doubled backslashes behind, so any window
+    # whose title holds a double quote (browser tabs routinely do) stops being JSON.
     raw="${raw#\(}"
     raw="${raw%,\)}"
-    if [[ "$raw" == \"*\" ]]; then
-        jq -r . <<< "$raw"
-    else
+    if [[ "$raw" != \"*\" ]]; then
         raw="${raw#\'}"
         raw="${raw%\'}"
-        printf '%s\n' "$raw"
+        raw="\"${raw//\"/\\\"}\""
     fi
+    jq -r . <<< "$raw"
+}
+
+# Decoded ListWindows array. Returns non-zero rather than letting a jq parse error
+# escape, so one unreadable payload degrades a single placement instead of taking
+# the whole run down through set -e.
+list_windows() {
+    local json
+    json=$(dbus_json ListWindows) || return 1
+    jq -c . <<< "$json" 2>/dev/null \
+        || { warn "Unparseable window list from the shell extension."; return 1; }
 }
 
 # ── Extension installation ────────────────────────────────────────────────────
@@ -592,7 +604,8 @@ check_extension() {
 # ── Monitor detection ─────────────────────────────────────────────────────────
 
 detect_monitors() {
-    MONITORS_JSON=$(dbus_json GetMonitors | jq 'sort_by(.x)')
+    MONITORS_JSON=$(dbus_json GetMonitors | jq 'sort_by(.x)') \
+        || die "Could not read the monitor list from the shell extension."
     MON_COUNT=$(echo "$MONITORS_JSON" | jq 'length')
 
     if (( MON_COUNT == 0 )); then
@@ -664,8 +677,13 @@ is_fullscreen_position() {
 # Launch $1, wait for a new window, print its id.
 launch_and_find_window() {
     local cmd="$1"
+    # No fallback here: an empty "before" snapshot would make every pre-existing
+    # window look new and get tiled in place of the one being launched.
     local before_json
-    before_json=$(dbus_json ListWindows | jq '[.[].id]')
+    if ! before_json=$(list_windows | jq '[.[].id]'); then
+        warn "Could not snapshot the window list. Skipping: $cmd"
+        return 1
+    fi
 
     log "Launching: $cmd"
     eval "$cmd" &>/dev/null &
@@ -675,9 +693,9 @@ launch_and_find_window() {
     while [[ -z "$new_id" ]] && (( elapsed < WINDOW_WAIT_TIMEOUT * 10 )); do
         sleep 0.1
         (( ++elapsed ))
-        new_id=$(dbus_json ListWindows | jq -r \
+        new_id=$(list_windows | jq -r \
             --argjson before "$before_json" \
-            '[.[].id] - $before | .[0] // empty')
+            '[.[].id] - $before | .[0] // empty') || new_id=""
     done
 
     if [[ -z "$new_id" ]]; then
@@ -692,7 +710,7 @@ launch_and_find_window() {
 
 # Print "X Y W H" for a window id; empty if the window is gone.
 window_rect() {
-    dbus_json ListWindows | jq -r --argjson id "$1" \
+    list_windows | jq -r --argjson id "$1" \
         '.[] | select(.id == $id) | "\(.x) \(.y) \(.width) \(.height)"'
 }
 
@@ -717,7 +735,7 @@ position_window() {
         for (( attempt = 1; attempt <= PLACEMENT_ATTEMPTS; attempt++ )); do
             dbus_call MoveResize "$wid" "$x" "$y" "$w" "$h" >/dev/null
             sleep "$PLACEMENT_SETTLE"
-            actual=$(window_rect "$wid")
+            actual=$(window_rect "$wid") || actual=""
             if [[ "$actual" == "$want" ]]; then
                 break
             fi
@@ -767,7 +785,7 @@ track_window() {
 
 # Print the ids of all NORMAL windows, excluding $1 (-1 excludes none).
 list_window_ids() {
-    dbus_json ListWindows | jq -r --argjson ex "${1:--1}" '.[] | select(.id != $ex) | .id'
+    list_windows | jq -r --argjson ex "${1:--1}" '.[] | select(.id != $ex) | .id'
 }
 
 # close_windows <timeout-seconds> <die|report> <id>...
@@ -787,7 +805,7 @@ close_windows() {
 
     # Narrow to what is actually open — the state file can hold stale ids.
     local -a alive=()
-    mapfile -t alive < <(dbus_json ListWindows | jq -r --argjson want "$want" "$live_query")
+    mapfile -t alive < <(list_windows | jq -r --argjson want "$want" "$live_query")
     if (( ${#alive[@]} == 0 )); then
         log "No matching windows still open."
         return 0
@@ -800,7 +818,7 @@ close_windows() {
 
     local elapsed=0
     while :; do
-        mapfile -t alive < <(dbus_json ListWindows | jq -r --argjson want "$want" "$live_query")
+        mapfile -t alive < <(list_windows | jq -r --argjson want "$want" "$live_query")
         if (( ${#alive[@]} == 0 )); then break; fi
         if (( elapsed >= timeout * 10 )); then break; fi
         sleep 0.1
@@ -809,8 +827,9 @@ close_windows() {
 
     if (( ${#alive[@]} > 0 )); then
         local listing
-        listing=$(dbus_json ListWindows | jq -r --argjson want "$want" \
-            '.[] | select(.id as $i | $want | index($i)) | "    \(.wmClass): \(.title)"')
+        listing=$(list_windows | jq -r --argjson want "$want" \
+            '.[] | select(.id as $i | $want | index($i)) | "    \(.wmClass): \(.title)"') \
+            || listing="    (window list unavailable)"
         if [[ "$on_survivors" == die ]]; then
             die "Timed out after ${timeout}s — ${#alive[@]} window(s) would not close:
 $listing
