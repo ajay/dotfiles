@@ -35,12 +35,14 @@
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc
+    ~/.local/bin/ajay-close-windows: scripts/ajay-close-windows
+    ~/.local/bin/ajay-dotfiles-claude-settings-local-sync: scripts/ajay-dotfiles-claude-settings-local-sync
+    ~/.local/bin/ajay-dotfiles-private-sync: scripts/ajay-dotfiles-private-sync
     ~/.local/bin/ajay-github-repo-manager: scripts/ajay-github-repo-manager
     ~/.local/bin/ajay-github-repo-updater: scripts/ajay-github-repo-updater
     ~/.local/bin/ajay-github-submodule-updater: scripts/ajay-github-submodule-updater
-    ~/.local/bin/ajay-dotfiles-claude-settings-local-sync: scripts/ajay-dotfiles-claude-settings-local-sync
-    ~/.local/bin/ajay-dotfiles-private-sync: scripts/ajay-dotfiles-private-sync
-    ~/.local/bin/ajay-close-windows: scripts/ajay-close-windows
+    ~/.local/bin/ajay-meta-cpe-junk-start: private/scripts/ajay-meta-cpe-junk-start
+    ~/.local/bin/ajay-meta-cpe-junk-stop: private/scripts/ajay-meta-cpe-junk-stop
     ~/.local/bin/ajay-workspace-setup: scripts/ajay-workspace-setup
 
 - shell-build-tools-deps:
