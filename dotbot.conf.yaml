@@ -25,6 +25,7 @@
     - '~/.claude/projects/-home-ajaysriv'
 
 - link:
+    ~/.config/autostart/ajay-brightness-set.desktop: dotfiles/autostart/ajay-brightness-set.desktop
     ~/.config/fish/config.fish: dotfiles/fish/config.fish
     ~/.config/fish/functions: dotfiles/fish/functions/
     ~/.claude/commands: private/dotfiles/claude/commands/
@@ -35,6 +36,7 @@
     ~/.config/sublime-text/Packages/User: dotfiles/sublime-text/Packages/User/
     ~/.gitconfig: dotfiles/git/gitconfig
     ~/.hgrc: dotfiles/hg/hgrc
+    ~/.local/bin/ajay-brightness-set: scripts/ajay-brightness-set
     ~/.local/bin/ajay-close-windows: scripts/ajay-close-windows
     ~/.local/bin/ajay-dotfiles-claude-settings-local-sync: scripts/ajay-dotfiles-claude-settings-local-sync
     ~/.local/bin/ajay-dotfiles-private-sync: scripts/ajay-dotfiles-private-sync

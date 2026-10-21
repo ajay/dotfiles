@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Set every built-in display panel to a brightness percentage (default 100).
+
+Run at login from ~/.config/autostart/ajay-brightness-set.desktop. External
+monitors are left alone. Uses mutter's backlight D-Bus API (GNOME 49+).
+
+Usage:
+  ajay-brightness-set            Set built-in panels to max
+  ajay-brightness-set PERCENT    Set built-in panels to PERCENT (0-100)
+
+0% is the panel's lowest backlight level, not off.
+"""
+
+import argparse
+import sys
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+
+def percent(value):
+    try:
+        p = int(value.rstrip("%"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {value!r}")
+    if not 0 <= p <= 100:
+        raise argparse.ArgumentTypeError(f"must be 0-100: {p}")
+    return p
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Set built-in display panels to a brightness percentage."
+    )
+    parser.add_argument(
+        "percent",
+        nargs="?",
+        type=percent,
+        default=100,
+        help="brightness 0-100 (default: 100)",
+    )
+    args = parser.parse_args()
+
+    proxy = Gio.DBusProxy.new_for_bus_sync(
+        Gio.BusType.SESSION,
+        Gio.DBusProxyFlags.NONE,
+        None,
+        "org.gnome.Mutter.DisplayConfig",
+        "/org/gnome/Mutter/DisplayConfig",
+        "org.gnome.Mutter.DisplayConfig",
+        None,
+    )
+    _, monitors, _, _ = proxy.call_sync(
+        "GetCurrentState", None, Gio.DBusCallFlags.NONE, -1, None
+    ).unpack()
+    builtin = {spec[0] for spec, _, props in monitors if props.get("is-builtin")}
+
+    backlight = proxy.get_cached_property("Backlight")
+    if backlight is None:
+        print("mutter exposes no Backlight property", file=sys.stderr)
+        return 1
+    # Backlight has its own serial, distinct from GetCurrentState's.
+    serial, panels = backlight.unpack()
+    for panel in panels:
+        if panel["connector"] in builtin:
+            span = panel["max"] - panel["min"]
+            value = panel["min"] + round(span * args.percent / 100)
+            proxy.call_sync(
+                "SetBacklight",
+                GLib.Variant("(usi)", (serial, panel["connector"], value)),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None,
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

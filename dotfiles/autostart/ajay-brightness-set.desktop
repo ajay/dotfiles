@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Brightness max
+Comment=Set built-in display panels to maximum brightness
+Exec=ajay-brightness-set
+NoDisplay=true
