@@ -3,9 +3,9 @@ function reboot
         echo "reboot: no terminal to confirm on; use: command reboot" >&2
         return 1
     end
-    read -l -P "Reboot $hostname? [y/N] " answer
+    read -l -n 1 -P "Reboot $hostname? [y/N] " answer
     or return 1
-    if not string match -qir '^y(es)?$' -- $answer
+    if not string match -qi y -- $answer
         echo "reboot: not rebooting" >&2
         return 1
     end
