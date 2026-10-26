@@ -217,6 +217,10 @@
         - "=> shell-gsettings: disable suspend when plugged in"
       - - gsettings set org.gnome.shell favorite-apps "['org.gnome.Ptyxis.desktop', 'org.gnome.Nautilus.desktop', 'google-chrome.desktop', 'sublime_text.desktop']"
         - "=> shell-gsettings: dock favorites"
+      - - gsettings set org.gnome.Ptyxis restore-session false
+        - "=> shell-gsettings: ptyxis: don't restore previous tabs on start"
+      - - gsettings set org.gnome.Ptyxis restore-window-size false
+        - "=> shell-gsettings: ptyxis: open new windows at the default size"
 
 - shell-keybindings:
   - shell:
