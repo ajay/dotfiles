@@ -37,6 +37,7 @@ Only `make install` and `make git-submodule-update` auto-update submodules (and 
 - `shell-build-tools-deps` — `make -C tools/build-tools deps-install`
 - `shell-dnf-update` — `dnf update` (Meta-aware: uses `up-no-meta` on Meta machines)
 - `shell-dnf` — install Fedora packages
+- `shell-flatpak` — ensure the system-wide Flathub remote exists, then install Flathub apps (Pinta, PrusaSlicer)
 - `shell-nvidia` — install the NVIDIA driver (akmod-nvidia + CUDA) on machines with an NVIDIA GPU; no-op otherwise
 - `shell-jlink` — install the SEGGER J-Link RPM (downloaded from segger.com, not in any repo); skipped if already present
 - `shell-udev` — deploy `dotfiles/udev/*.rules` to `/etc/udev/rules.d`, reload, and warn about unmerged `.rpmnew` files; skipped on Meta machines, where Chef owns that directory

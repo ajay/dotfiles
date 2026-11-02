@@ -108,6 +108,15 @@
       - - sudo -v && yes | sudo remove-retired-packages
         - "=> shell-dnf: remove-retired-packages"
 
+- shell-flatpak:
+  - shell:
+      - - sudo -v && sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        - "=> shell-flatpak: add flathub remote"
+      - - sudo -v && sudo flatpak install -y --noninteractive flathub
+          com.github.PintaProject.Pinta
+          com.prusa3d.PrusaSlicer
+        - "=> shell-flatpak: Installing apps"
+
 - shell-nvidia:
   - if: 'lspci -d 10de:: -nn | grep -Eiq "VGA compatible|3D controller"'
     shell:
