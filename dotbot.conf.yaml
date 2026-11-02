@@ -69,14 +69,21 @@
           android-tools
           ansifilter
           apcalc
+          curl
+          fastfetch
           fedora-workstation-repositories
+          file
           fish
           gh
           gnome-tweaks
+          gti
           htop
           less
+          make
           meld
+          ncdu
           openocd
+          picocom
           python3-pip
           remove-retired-packages
           source-highlight
@@ -84,6 +91,7 @@
           strace
           vim
           vlc
+          wget
           xclip
         - "=> shell-dnf: Installing packages"
       - - sudo -v && sudo dnf -y config-manager setopt google-chrome.enabled=1 && sudo dnf -y install google-chrome-stable
