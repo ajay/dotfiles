@@ -155,7 +155,7 @@ LAYOUT_DUAL=(
     "5:0:E-F:$CMD_DOTFILES_STATUS"
 
     # ── Workspace 6: browser ──────────────────────────────────────────────────
-    "6:1:Q-F:$CMD_BROWSER_MAIL"
+    "6:0:Q-F:$CMD_BROWSER_MAIL"
 )
 
 LAYOUT_SINGLE=(
