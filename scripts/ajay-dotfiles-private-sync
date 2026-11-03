@@ -30,6 +30,12 @@ if ! git -C "$SUB" pull --rebase --autostash origin "$SUB_BRANCH"; then
   echo "ABORT: pull into $SUB hit conflicts — resolve in $SUB, finish the rebase, then re-run." >&2
   exit 1
 fi
+# A conflicting autostash pop still exits 0, and step 3's add -A would commit its markers.
+if [ -n "$(git -C "$SUB" ls-files -u)" ] ||
+   git -C "$SUB" grep -qE --untracked '^(<<<<<<<|>>>>>>>)( |$)'; then
+  echo "ABORT: conflict markers in $SUB (autostash pop; edits also kept in git stash) — resolve, then re-run." >&2
+  exit 1
+fi
 
 # 2) Pre-push secret scan (high-signal patterns) — abort rather than leak.
 if grep -rniE --exclude-dir=.git \
