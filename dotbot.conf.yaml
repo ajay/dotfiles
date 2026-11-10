@@ -139,6 +139,20 @@
       - - 'find /etc/udev/rules.d -name "*.rpmnew" -printf "WARNING: unmerged %p - package udev rules are stale\n"'
         - "=> shell-udev: warn on unmerged *.rpmnew"
 
+- shell-audio:
+  - if: 'test "$(hostnamectl chassis)" = "desktop" && test -d /sys/module/snd_hda_intel'
+    shell:
+      - - sudo -v && sudo install -m 0644 -o root -g root dotfiles/modprobe/snd-hda-intel-power-save.conf /etc/modprobe.d/snd-hda-intel-power-save.conf
+        - "=> shell-audio: deploy snd_hda_intel power_save=0 (modprobe.d)"
+      - - sudo -v && echo 0 | sudo tee /sys/module/snd_hda_intel/parameters/power_save >/dev/null
+        - "=> shell-audio: apply power_save=0 now"
+  - if: 'test "$(hostnamectl chassis)" = "desktop" && test -d /sys/module/snd_hda_intel && test -d /etc/tuned'
+    shell:
+      - - sudo -v && sudo install -D -m 0644 -o root -g root dotfiles/tuned/audio-no-power-save/tuned.conf /etc/tuned/profiles/audio-no-power-save/tuned.conf
+        - "=> shell-audio: deploy tuned audio-no-power-save profile"
+      - - 'p="$(cat /etc/tuned/post_loaded_profile 2>/dev/null)"; if [ -z "$p" ]; then echo audio-no-power-save | sudo tee /etc/tuned/post_loaded_profile >/dev/null && sudo systemctl try-restart tuned; elif [ "$p" != audio-no-power-save ]; then echo "WARNING: tuned post-loaded profile is already $p - audio-no-power-save not set"; fi'
+        - "=> shell-audio: make audio-no-power-save tuned's post-loaded profile"
+
 - shell-insync:
   - shell:
       - - sudo -v && sudo rpm --import https://d2t3ff60b2tol4.cloudfront.net/repomd.xml.key
