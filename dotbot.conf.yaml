@@ -150,7 +150,7 @@
     shell:
       - - sudo -v && sudo install -D -m 0644 -o root -g root dotfiles/tuned/audio-no-power-save/tuned.conf /etc/tuned/profiles/audio-no-power-save/tuned.conf
         - "=> shell-audio: deploy tuned audio-no-power-save profile"
-      - - 'p="$(cat /etc/tuned/post_loaded_profile 2>/dev/null)"; if [ -z "$p" ]; then echo audio-no-power-save | sudo tee /etc/tuned/post_loaded_profile >/dev/null && sudo systemctl try-restart tuned; elif [ "$p" != audio-no-power-save ]; then echo "WARNING: tuned post-loaded profile is already $p - audio-no-power-save not set"; fi'
+      - - 'sh -c ''p="$(cat /etc/tuned/post_loaded_profile 2>/dev/null)"; if [ -z "$p" ]; then echo audio-no-power-save | sudo tee /etc/tuned/post_loaded_profile >/dev/null && sudo systemctl try-restart tuned; elif [ "$p" != audio-no-power-save ]; then echo "WARNING: tuned post-loaded profile is already $p - audio-no-power-save not set"; fi'''
         - "=> shell-audio: make audio-no-power-save tuned's post-loaded profile"
 
 - shell-insync:
