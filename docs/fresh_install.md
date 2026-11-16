@@ -12,6 +12,9 @@
         - Config -> Keyboard/Mouse: F1-F12 as primary function (set FN key to always be enabled)
     - ThinkStation P8
         - Advanced -> CPU Setup -> C State Support: Disabled
+        - Advanced -> PCI Express Setup -> Re-Size BAR Support: Enabled
+            - Off leaves the NVIDIA BAR1 at 256 MiB, which the driver can exhaust and freeze the desktop
+              ([open-gpu-kernel-modules#1187](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/1187))
 
 - Bootstrap
     - Setup git ssh keys (manual)
@@ -32,6 +35,7 @@
         ```
         nvidia-smi
         lspci -nnk -d 10de:: | grep 'driver in use'   # -> nvidia
+        nvidia-smi -q -d MEMORY | grep -A1 BAR1      # P8: Total 16384 MiB; 256 MiB = Re-Size BAR off
         ```
 
 - Insync
